@@ -1,3 +1,6 @@
+# From Jacobus G.M. van der Linden “STreeD”
+# https://github.com/AlgTUDelft/pystreed 
+
 ## Ignore copyright protected datasets
 data/fairness/compas-recid-binarized.csv
 data/fairness/compas-recid-binarized-names.txt

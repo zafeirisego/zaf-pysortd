@@ -1,8 +1,13 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
 #include "utils/parameter_handler.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	struct TuneRunConfiguration {
 		bool reset_solver{ true };

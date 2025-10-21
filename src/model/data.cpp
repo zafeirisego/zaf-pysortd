@@ -1,6 +1,11 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "model/data.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	ADataView::ADataView(const AData* data, const std::vector<std::vector<const AInstance*>>& instances, const std::vector<std::vector<double>>& instance_weights)
 		: data(data), instances(instances), instance_weights(instance_weights)
@@ -315,6 +320,24 @@ namespace STreeD {
 
 		
 		
+	}
+
+	int ADataView::NumInstancesForFeature(int feature) const {
+		int count = 0;
+		for (int label = 0; label < NumLabels(); label++) {
+			for (auto& dp : GetInstancesForLabel(label)) {
+				count += dp->IsFeaturePresent(feature) ? 1 : 0;
+			}
+		}
+		return count;
+	}
+
+	int ADataView::NumInstancesForLabelAndFeature(int label, int feature) const {
+		int count = 0;
+		for (auto& dp : GetInstancesForLabel(label)) {
+			count += dp->IsFeaturePresent(feature) ? 1 : 0;
+		}
+		return count;
 	}
 
 	void ADataView::AddInstance(int label, const AInstance* instance) {

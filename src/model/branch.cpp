@@ -1,10 +1,12 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "model/branch.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	Branch::Branch(const Branch& other) : branch_codes(other.branch_codes) {}
 

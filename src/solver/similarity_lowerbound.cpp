@@ -1,11 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 
 #include "solver/similarity_lowerbound.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	SimilarityLowerBoundComputer<OT>::SimilarityLowerBoundComputer(OT* optimization_task, int num_labels, int max_depth, int size, int num_instances) :
@@ -16,19 +18,9 @@ namespace STreeD {
 	template <class OT>
 	typename SimilarityLowerBoundComputer<OT>::SolContainer SimilarityLowerBoundComputer<OT>::SubstractLB(
 		typename SimilarityLowerBoundComputer<OT>::SolContainer& lb, typename SimilarityLowerBoundComputer<OT>::SolType& values) const {
-		if constexpr (OT::total_order) {
-			auto& sol = lb.solution;
-			OT::Subtract(sol, values, sol);
-			return lb;
-		} else {
-			for (size_t i = 0; i < lb->Size(); i++) {
-				auto& sol = lb->GetMutable(i).solution;
-				OT::Subtract(sol, values, sol);
-			}
-			auto new_lb = InitializeSol<OT>();
-			AddSols<OT>(new_lb, lb);
-			return new_lb;
-		}
+		auto& sol = lb.solution;
+		OT::Subtract(sol, values, sol);
+		return lb;
 	}
 
 	template <class OT>
@@ -118,7 +110,7 @@ namespace STreeD {
 
 	template <class OT>
 	inline void SimilarityLowerBoundComputer<OT>::Reset() {
-		int depth = archive_.size();
+		int depth = int(archive_.size());
 		archive_.clear();
 		archive_.resize(depth);
 	}
@@ -141,19 +133,6 @@ namespace STreeD {
 	}
 
 
-	template class SimilarityLowerBoundComputer<Accuracy>;
 	template class SimilarityLowerBoundComputer<CostComplexAccuracy>;
-	template class SimilarityLowerBoundComputer<BalancedAccuracy>;
-
-	template class SimilarityLowerBoundComputer<Regression>;
 	template class SimilarityLowerBoundComputer<CostComplexRegression>;
-	template class SimilarityLowerBoundComputer<SimpleLinearRegression>;
-	template class SimilarityLowerBoundComputer<PieceWiseLinearRegression>;
-
-	template class SimilarityLowerBoundComputer<CostSensitive>;
-	template class SimilarityLowerBoundComputer<InstanceCostSensitive>;
-	template class SimilarityLowerBoundComputer<F1Score>;
-	template class SimilarityLowerBoundComputer<GroupFairness>;
-	template class SimilarityLowerBoundComputer<EqOpp>;
-	template class SimilarityLowerBoundComputer<PrescriptivePolicy>;
 }

@@ -1,8 +1,15 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
 #include "model/node.h"
 
-namespace STreeD {
+
+namespace SORTD {
+
 
 	typedef std::make_signed_t<std::size_t> ssize_t;
 
@@ -10,7 +17,7 @@ namespace STreeD {
     * Container for solutions of type Node<OT>
     * Only necessary for partially ordered Optimization tasks
     */
-	template <class OT>
+    template <class OT>
 	class Container {
 	public:
 
@@ -62,11 +69,18 @@ namespace STreeD {
         // Iteratively AddInvOrInvMerge solutions
         inline void AddInvOrInvMerge(const Container<OT>& container, size_t max_size) { for (const auto& node : container.solutions) AddInvOrInvMerge(node, max_size); }
 
+        inline void Push(const Node<OT>& node) {solutions.push_back(node);}
+
+        inline void Push(const std::shared_ptr<Container<OT>>& container) {for (const auto& node : (*container).solutions) Push(node);}
+
         // Get the number of solutions in this container
 		inline size_t Size() const { return solutions.size(); }
 		
         // Get the solutions in this container
         inline const std::vector<Node<OT>>& GetSolutions() const { return solutions; }
+
+        // Get the solutions in this container (mutable)
+        inline std::vector<Node<OT>>& GetMutableSolutions() { return solutions; }
 
         // Get the ith solution in this container
         inline const Node<OT>& Get(size_t ix) const { return solutions[ix]; }
@@ -119,15 +133,21 @@ namespace STreeD {
         // Checks if node n1 dominates node n2
         // If the number of nodes should also be compared, use node_compare = true
 		static bool Dominates(const Node<OT>& n1, const Node<OT>& n2, bool node_compare = true) {
-			return OT::Dominates(n1.solution, n2.solution)
-				&& (!node_compare
-					|| !(n1.solution == n2.solution)
-					|| n1.NumNodes() <= n2.NumNodes());
+            if (OT::total_order){
+                return false;
+            }
+            return OT::Dominates(n1.solution, n2.solution)
+                   && (!node_compare
+                       || !(n1.solution == n2.solution)
+                       || n1.NumNodes() <= n2.NumNodes());
 		}
 
         // Checks if node n1 reverse dominates node n2
         // If the number of nodes should also be compared, use node_compare = true
         static bool DominatesInv(const Node<OT>& n1, const Node<OT>& n2, bool node_compare = true) {
+            if (OT::total_order){
+                return false;
+            }
 			return OT::DominatesInv(n1.solution, n2.solution)
 				&& (!node_compare
 					|| !(n1.solution == n2.solution)
@@ -136,6 +156,9 @@ namespace STreeD {
 		
         // Checks if node n1 strictly dominates node n2
 		inline static bool StrictDominates(const Node<OT>& n1, const Node<OT>& n2) {
+            if (OT::total_order){
+                return false;
+            }
 			return n1.solution != n2.solution && OT::Dominates(n1.solution, n2.solution);
 		}
 
@@ -161,20 +184,27 @@ namespace STreeD {
             // Add the node if the container is empty
             if (Size() == 0) {
                 solutions.push_back(node);
-                if constexpr (OT::check_unique) uniques[node.solution] = node.NumNodes();
+                if constexpr (OT::total_order) uniques[node.solution] = node.NumNodes();
+                else if constexpr (OT::check_unique) uniques[node.solution] = node.NumNodes();
                 return;
             }
 
             // Test if the solution is already in the unique map
             // If so, compare the number of nodes and return if it is worse 
-            if constexpr (OT::check_unique) {
+            if constexpr (OT::total_order) {
+                auto it = uniques.find(node.solution);
+                if (it != uniques.end() && it->second <= node.NumNodes()) return;
+                else if (it != uniques.end()) it->second = node.NumNodes();
+                else uniques[node.solution] = node.NumNodes();
+            }
+            else if constexpr (OT::check_unique) {
                 auto it = uniques.find(node.solution);
                 if (it != uniques.end() && it->second <= node.NumNodes()) return;
                 else if (it != uniques.end()) it->second = node.NumNodes();
                 else uniques[node.solution] = node.NumNodes();
             }
 
-            if constexpr (true) {
+            if constexpr (!OT::total_order) {
                 // Only add it if the node is not dominated by this container
                 for (size_t i = 0; i < Size(); i++) {
                     if constexpr(inv) {
@@ -200,45 +230,46 @@ namespace STreeD {
 
                 // Add this solution to the container
                 solutions.push_back(node);
-            } else {
-                // Add the node using binary search, to result in a sorted container.
-                // Currently not used. Might be useful for some optimization tasks? ]
-                ssize_t l = 0;
-                ssize_t u = Size() - 1;
-                ssize_t m;
-
-                while (l <= u) {
-                    m = (l + u) / 2;
-                    if (node.solution == solutions[m].solution) return;
-                    if (OT::FrontLT(node.solution, solutions[m].solution)) {
-                        u = m - 1;
-                    } else {
-                        l = m + 1;
-                    }
-                }
-
-                /* at the end of loop u is position just less than p, l is next position and > p */
-                /* if the new point is dominated dont add */
-                if (u >= 0 && Container<OT>::Dominates<inv>(solutions[u].solution, node.solution, 0)) return;
-
-                /* Move past dominated points */
-                for (; l < Size() && Container<OT>::Dominates<inv>(node.solution, solutions[l].solution, 0); l++);
-
-                /* no points dominated if u+1 == l */
-                if (u + 1 == l) {
-                    solutions.insert(solutions.begin() + l, node);
-                    return;
-                }
-                /* 1 point dominated if u+2 == l, simply replace */
-                if (u + 2 == l) {
-                    solutions[u + 1] = node;
-                    return;
-                }
-                solutions[u + 1] = node;
-                for (ssize_t i = u + 2; i < Size() && i < (Size() + u - l + 2); i++)
-                    solutions[i] = solutions[i + l - u - 2];
-                solutions.resize(Size() + u - l + 2);// ->length += u - l + 2;        
             }
+//            else {
+//                // Add the node using binary search, to result in a sorted container.
+//                // Currently not used. Might be useful for some optimization tasks? ]
+//                ssize_t l = 0;
+//                ssize_t u = Size() - 1;
+//                ssize_t m;
+//
+//                while (l <= u) {
+//                    m = (l + u) / 2;
+//                    if (node.solution == solutions[m].solution) return;
+//                    if (OT::FrontLT(node.solution, solutions[m].solution)) {
+//                        u = m - 1;
+//                    } else {
+//                        l = m + 1;
+//                    }
+//                }
+//
+//                /* at the end of loop u is position just less than p, l is next position and > p */
+//                /* if the new point is dominated dont add */
+//                if (u >= 0 && Container<OT>::Dominates<inv>(solutions[u].solution, node.solution, 0)) return;
+//
+//                /* Move past dominated points */
+//                for (; l < Size() && Container<OT>::Dominates<inv>(node.solution, solutions[l].solution, 0); l++);
+//
+//                /* no points dominated if u+1 == l */
+//                if (u + 1 == l) {
+//                    solutions.insert(solutions.begin() + l, node);
+//                    return;
+//                }
+//                /* 1 point dominated if u+2 == l, simply replace */
+//                if (u + 2 == l) {
+//                    solutions[u + 1] = node;
+//                    return;
+//                }
+//                solutions[u + 1] = node;
+//                for (ssize_t i = u + 2; i < Size() && i < (Size() + u - l + 2); i++)
+//                    solutions[i] = solutions[i + l - u - 2];
+//                solutions.resize(Size() + u - l + 2);// ->length += u - l + 2;
+//            }
         
 	    }
 
@@ -356,6 +387,7 @@ namespace STreeD {
 
         // The list of all solutions
 		std::vector<Node<OT>> solutions;
+        std::shared_ptr<Tree<OT>> tree;
         
         // A map of solutions to node count. For quick checking if an equivalent solution is already
         // part of this container, and how many nodes were used for this solution

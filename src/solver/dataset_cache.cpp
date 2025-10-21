@@ -1,10 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "solver/dataset_cache.h"
+#include "rashomon/rashomon_utils.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	DatasetCache<OT>::DatasetCache(int num_instances) :
@@ -40,24 +43,21 @@ namespace STreeD {
 		auto& bitsetview = data.GetBitSetView();
 		auto iter_vector_entry = FindIterator(bitsetview, b);// hashmap.find(data);
 		int sol_num_nodes = num_nodes;
-		if constexpr (OT::total_order) {
-			sol_num_nodes = optimal_solutions.NumNodes();
-		}
+		sol_num_nodes = optimal_solutions.NumNodes();
 		int optimal_node_depth = std::min(depth, sol_num_nodes); //this is an estimate of the depth, it could be lower actually. We do not consider lower for simplicity, but it would be good to consider it as well.
 
 		//if the branch has never been seen before, create a new entry for it
 		if (iter_vector_entry == hashmap.end()) {
 			CacheEntryVector<OT> vector_entry;
-			vector_entry.UpdateMaxDepthSearched(depth);
 			for (int node_budget = sol_num_nodes; node_budget <= num_nodes; node_budget++) {
 				for (int depth_budget = optimal_node_depth; depth_budget <= std::min(depth, node_budget); depth_budget++) {
 					vector_entry.push_back({ depth_budget, node_budget, optimal_solutions });
 				}
 			}
+			//if (!data.IsHashSet()) { data.SetHash(std::hash<ADataViewBitSet>()(bitsetview)); }
 			cache[data.Size()].insert(std::pair<ADataViewBitSet, CacheEntryVector<OT> >(bitsetview, vector_entry));
 			InvalidateStoredIterators(bitsetview);
 		} else {
-			iter_vector_entry->second.UpdateMaxDepthSearched(depth);
 			//this sol is valid for size=[opt.NumNodes, num_nodes] and depths d=min(size, depth)
 
 			//now we need to see if other node budgets have been seen before. 
@@ -131,7 +131,8 @@ namespace STreeD {
 		return empty_sol;
 	}
 
-	template <class OT>
+
+    template <class OT>
 	void DatasetCache<OT>::UpdateLowerBound(ADataView& data, const Branch& branch, const typename DatasetCache<OT>::SolContainer& lower_bound, int depth, int num_nodes) {
 		runtime_assert(depth <= num_nodes);
 
@@ -143,6 +144,7 @@ namespace STreeD {
 		if (iter_vector_entry == hashmap.end()) {
 			CacheEntryVector<OT> vector_entry(1, CacheEntry<OT>(depth, num_nodes)); 
 			vector_entry[0].UpdateLowerBound(lower_bound);
+			//if (!data.IsHashSet()) { data.SetHash(std::hash<ADataViewBitSet>()(bitsetview)); }
 			cache[data.Size()].insert(std::pair<ADataViewBitSet, CacheEntryVector<OT> >(bitsetview, vector_entry));
 			InvalidateStoredIterators(bitsetview);
 		} else {
@@ -196,24 +198,58 @@ namespace STreeD {
 	}
 
 	template <class OT>
-	int DatasetCache<OT>::GetMaxDepthSearched(ADataView& data, const Branch& branch) {
+	BranchTrackerCacheEntry<OT> DatasetCache<OT>::RetrieveBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes) {
 		auto& hashmap = cache[data.Size()];
 		auto& bitsetview = data.GetBitSetView();
 		auto iter = FindIterator(bitsetview, branch);// hashmap.find(data);
 
-		if (iter == hashmap.end()) { return 0; }
-		return iter->second.GetMaxDepthSearched();
+		if (iter == hashmap.end()) { return BranchTrackerCacheEntry<OT>(); }
+		
+		auto& entries = iter->second.entries;
+		for (auto& entry : entries) {
+			if (entry.GetDepthBudget() == depth && entry.GetNodeBudget() == num_nodes) {
+				//                std::shared_ptr<std::vector<RashomonTreeNode<OT>*>> trees = entry.GetBranchTrackerTrees();
+				return entry.GetBranchTrackerCacheEntry();
+			}
+		}
+		return BranchTrackerCacheEntry<OT>();
 	}
 
 	template <class OT>
-	void DatasetCache<OT>::UpdateMaxDepthSearched(ADataView& data, const Branch& branch, int depth) {
+	void DatasetCache<OT>::UpdateBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes, BranchTrackerCacheEntry<OT>& branch_cache_entry) {
+		runtime_assert(depth <= num_nodes && num_nodes > 0);
+
 		auto& hashmap = cache[data.Size()];
 		auto& bitsetview = data.GetBitSetView();
 		auto iter = FindIterator(bitsetview, branch);// hashmap.find(data);
 
-		if (iter == hashmap.end()) { return; }
-		iter->second.UpdateMaxDepthSearched(depth);
+		//if the branch has never been seen before, create a new entry for it
+		if (iter == hashmap.end()) {
+			CacheEntryVector<OT> vector_entry;
+			vector_entry.push_back({ depth, num_nodes });
+			vector_entry.front().SetBranchTrackerCacheEntry(branch_cache_entry);
+			cache[data.Size()].insert(std::pair<ADataViewBitSet, CacheEntryVector<OT> >(bitsetview, vector_entry));
+			InvalidateStoredIterators(bitsetview);
+		} else {
+			bool cache_updated = false;
+			auto& entries = iter->second.entries;
+			for (CacheEntry<OT>& entry : entries) {
+				if (entry.GetNodeBudget() == num_nodes && entry.GetDepthBudget() == depth) {
+					entry.SetBranchTrackerCacheEntry(branch_cache_entry);
+					cache_updated = true;
+					break;
+				}
+			}
+			if (!cache_updated) {
+				CacheEntryVector<OT> vector_entry;
+				vector_entry.push_back({ depth, num_nodes });
+				vector_entry.front().SetBranchTrackerCacheEntry(branch_cache_entry);
+				cache[data.Size()].insert(std::pair<ADataViewBitSet, CacheEntryVector<OT> >(bitsetview, vector_entry));
+				InvalidateStoredIterators(bitsetview);
+			}
+		}
 	}
+
 
 	template <class OT>
 	int DatasetCache<OT>::NumEntries() const {
@@ -249,21 +285,7 @@ namespace STreeD {
 		return iter;
 	}
 
-	template class DatasetCache<Accuracy>;
 	template class DatasetCache<CostComplexAccuracy>;
-	template class DatasetCache<BalancedAccuracy>;
-
-	template class DatasetCache<Regression>;
 	template class DatasetCache<CostComplexRegression>;
-	template class DatasetCache<PieceWiseLinearRegression>;
-	template class DatasetCache<SimpleLinearRegression>;
-
-	template class DatasetCache<CostSensitive>;
-	template class DatasetCache<InstanceCostSensitive>;
-	template class DatasetCache<F1Score>;
-	template class DatasetCache<GroupFairness>;
-	template class DatasetCache<EqOpp>;
-	template class DatasetCache<PrescriptivePolicy>;
-	template class DatasetCache<SurvivalAnalysis>;
 
 }

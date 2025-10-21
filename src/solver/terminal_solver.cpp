@@ -1,7 +1,12 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "solver/terminal_solver.h"
 #include "solver/solver.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	TerminalSolver<OT>::TerminalSolver(Solver<OT>* solver) :
@@ -22,12 +27,14 @@ namespace STreeD {
 	}
 
 	template <class OT>
-	TerminalResults<OT>& TerminalSolver<OT>::Solve(const ADataView& data, const typename TerminalSolver<OT>::Context& context, typename TerminalSolver<OT>::SolContainer& UB, int num_nodes) {
+	TerminalResults<OT>& TerminalSolver<OT>::Solve(const ADataView& data, const typename TerminalSolver<OT>::Context& context, typename TerminalSolver<OT>::SolContainer& UB, typename TerminalSolver<OT>::SolType rash_bound_delta, int num_nodes) {
+		bool previous_ub_higher = this->UB.solution >= UB.solution;
 		this->UB = UB;
 		bool changes_made = cost_calculator.Initialize(data, context, num_nodes);
-		if (!changes_made) return results;
+		if (!changes_made && previous_ub_higher) return results;
 		results.Clear();
 		if (cost_calculator.GetTotalCount() < solver_parameters->minimum_leaf_node_size) return results;
+		this->rash_bound_delta = rash_bound_delta;
 		InitialiseChildrenInfo(context, data);
 		SolveOneNode(data, context, true);
 		if (num_nodes == 1) {
@@ -67,13 +74,25 @@ namespace STreeD {
 
 		for (int _f1 = 0; _f1 < _num_features; _f1++) {
 			int f1 = features[_f1];
+			//if (!task->MayBranchOnFeature(f1)) continue;
+			//if (branch.HasBranchedOnFeature(f1)) continue;
+			
 			if (SolutionsEqual<OT>(zero_sol, results.three_nodes_solutions)) break;
 
+			//total1 = cost_calculator.GetCount11(f1, f1);
+			//total0 = cost_calculator.GetTotalCount() - total1;
+			//if (total0 < solver_parameters->minimum_leaf_node_size || total1 < solver_parameters->minimum_leaf_node_size) continue;
+
 			for (int _f2 = _f1 + 1; _f2 < _num_features; _f2++) {
+				//if (!task->MayBranchOnFeature(f2)) continue;
 				int f2 = features[_f2];
-				
+				//if (f1 == f2) continue;
+				//if (branch.HasBranchedOnFeature(f2)) continue;
+
 				cost_calculator.GetIndexInfo(f1, f2, index);
 				cost_calculator.GetCounts(counts, index);
+				//runtime_assert(total0 == counts.count00 + counts.count01);
+				//runtime_assert(total1 == counts.count10 + counts.count11);
 
 				if ((counts.count00 < solver_parameters->minimum_leaf_node_size || counts.count01 < solver_parameters->minimum_leaf_node_size)
 					&& (counts.count10 < solver_parameters->minimum_leaf_node_size || counts.count11 < solver_parameters->minimum_leaf_node_size)
@@ -159,19 +178,23 @@ namespace STreeD {
 	void TerminalSolver<OT>::SolveOneNode(const ADataView& data, const typename TerminalSolver<OT>::Context& context, bool initialized) {
 		runtime_assert(initialized); // for now
 		auto& result = results.one_node_solutions;
-		SetSolSizeBudget<OT>(result, 1, 1);
 
 		Node<OT> node;
 		typename TerminalSolver<OT>::SolType merged_sol;
+		// Add leaf nodes
+		//if constexpr (OT::custom_leaf) {
+	    //	
+		//	AddSol<OT>(result, task->SolveLeafNode(data, context));
+		//} else
 		{
 			typename OT::SolLabelType out_label;
 			for (int label = 0; label < data.NumLabels(); label++) {
 				//node = Node<OT>(label, task->GetLeafCosts(data, context, label));
-				cost_calculator.CalcLeafSol(merged_sol, label, out_label);
+				cost_calculator.CalcLeafSol(merged_sol, label,out_label, context);
 				node.Set(INT32_MAX, out_label, merged_sol, 0, 0);
 
 				if (OT::has_constraint && !SatisfiesConstraint(node, context)) continue;
-				if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, node)) continue;
+				if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, node, rash_bound_delta)) continue;
 				AddSol<OT>(result, node);
 			}
 		}
@@ -198,7 +221,7 @@ namespace STreeD {
 					OT::Add(merged_sol, branching_costs, merged_sol);
 					node.Set(feature, OT::worst_label, merged_sol, 0, 0);
 					if (OT::has_constraint && !SatisfiesConstraint(node, context)) continue;
-					if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, node)) continue;
+					if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, node, rash_bound_delta)) continue;
 					AddSol<OT>(result, node);
 					AddSol<OT>(UB, node);
 				}
@@ -225,7 +248,7 @@ namespace STreeD {
 		//temp_branch_node.feature = feature;
 		temp_branch_node.solution = solution;
 		if constexpr (OT::has_constraint) { if (!SatisfiesConstraint(temp_branch_node, context)) return; }
-		if constexpr (OT::terminal_filter) { if (LeftStrictDominatesRightSol<OT>(UB, temp_branch_node)) return; }
+		if constexpr (OT::terminal_filter) { if (UBStrictDominatesRight<OT>(UB, temp_branch_node, rash_bound_delta)) return; }
 		AddSol<OT>(child_info.left_child_assignments, temp_branch_node);
 	}
 
@@ -236,7 +259,7 @@ namespace STreeD {
 		//temp_branch_node.feature = feature;
 		temp_branch_node.solution = solution;
 		if constexpr (OT::has_constraint) { if (!SatisfiesConstraint(temp_branch_node, context)) return; }
-		if constexpr (OT::terminal_filter) { if (LeftStrictDominatesRightSol<OT>(UB, temp_branch_node)) return; }
+		if constexpr (OT::terminal_filter) { if (UBStrictDominatesRight<OT>(UB, temp_branch_node, rash_bound_delta)) return; }
 		AddSol<OT>(child_info.right_child_assignments, temp_branch_node);
 	}
 
@@ -260,6 +283,10 @@ namespace STreeD {
 		typename TerminalSolver<OT>::SolType leaf_sol;
 		typename OT::SolLabelType assign_label;
 
+		//for (int label = 0; label < num_labels; label++) {
+		//	cost_calculator.CalcSols(counts, sols[label], label, index);
+		//}
+
 		Node<OT> node;
 		if (left_size >= solver_parameters->minimum_leaf_node_size) {
 			for (int label = 0; label < num_labels; label++) {
@@ -269,7 +296,7 @@ namespace STreeD {
 				node.Set(INT32_MAX, assign_label, leaf_sol, 0, 0);
 				//node.Set(INT32_MAX, OT::worst_label, sols[label].sol00, 0, 0);
 				if (OT::has_constraint && !SatisfiesConstraint(node, left_context)) continue;
-				if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, node)) continue;
+				if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, node, rash_bound_delta)) continue;
 				AddSol<OT>(left_leaves, node);
 			}
 		}
@@ -281,36 +308,42 @@ namespace STreeD {
 				node.Set(INT32_MAX, assign_label, leaf_sol, 0, 0);
 				//node.Set(INT32_MAX, OT::worst_label, sols[label].sol11, 0, 0);
 				if (OT::has_constraint && !SatisfiesConstraint(node, right_context)) continue;
-				if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, node)) continue;
+				if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, node, rash_bound_delta)) continue;
 				AddSol<OT>(right_leaves, node);
 			}
 		}
 
+		//if (right_size >= solver_parameters->minimum_leaf_node_size) {
+		//	for (int label = 0; label < num_labels; label++) {
+		//		costs = cost_calculator.GetCosts11(label, root_feature, root_feature);
+		//		task->ComputeD2Costs(costs, right_size, leaf_sol);
+		//		Node<OT> right_leaf_sol(cost_calculator.GetLabel(label, costs, right_size), leaf_sol);
+		//		if (OT::has_constraint && !SatisfiesConstraint(right_leaf_sol, right_context)) continue;
+		//		if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, right_leaf_sol, rash_bound_delta)) continue;
+		//		AddSol<OT>(right_leaves, right_leaf_sol);
+		//	}
+		//}
+
 		auto left_children = children_info[root_feature].left_child_assignments;
 		auto right_children = children_info[root_feature].right_child_assignments;
 
-		if constexpr (!OT::total_order) {
-			Merge(root_feature, context, left_children, right_leaves);
-			Merge(root_feature, context, left_leaves, right_children);
-		} else {
-			Node<OT> new_node;
-			auto branching_costs = cost_calculator.GetBranchingCosts(root_feature);
-			if (!CheckEmptySol<OT>(left_children) && !CheckEmptySol<OT>(right_leaves)) {
-				CombineSols(root_feature, left_children, right_leaves, branching_costs, new_node);
-				runtime_assert(new_node.solution >= -1e-6);
-				if (!OT::has_constraint || SatisfiesConstraint(new_node, context)) {
-					if (!OT::terminal_filter || !LeftStrictDominatesRightSol<OT>(UB, new_node)) {
-						if (new_node.solution < results.two_nodes_solutions.solution) results.two_nodes_solutions = new_node;
-					}
+		Node<OT> new_node;
+		auto branching_costs = cost_calculator.GetBranchingCosts(root_feature);
+		if (!CheckEmptySol<OT>(left_children) && !CheckEmptySol<OT>(right_leaves)) {
+			CombineSols(root_feature, left_children, right_leaves, branching_costs, new_node);
+			runtime_assert(new_node.solution >= -1e-6);
+			if (!OT::has_constraint || SatisfiesConstraint(new_node, context)) {
+				if (!OT::terminal_filter || !UBStrictDominatesRight<OT>(UB, new_node, rash_bound_delta)) {
+					if (new_node.solution < results.two_nodes_solutions.solution) results.two_nodes_solutions = new_node;
 				}
 			}
-			if (!CheckEmptySol<OT>(left_leaves) && !CheckEmptySol<OT>(right_children)) {
-				CombineSols(root_feature, left_leaves, right_children, branching_costs, new_node);
-				runtime_assert(new_node.solution >= -1e-6);
-				if (!OT::has_constraint || SatisfiesConstraint(new_node, context)) {
-					if (!OT::terminal_filter || !LeftStrictDominatesRightSol<OT>(UB, new_node)) {
-						if (new_node.solution < results.two_nodes_solutions.solution) results.two_nodes_solutions = new_node;
-					}
+		}
+		if (!CheckEmptySol<OT>(left_leaves) && !CheckEmptySol<OT>(right_children)) {
+			CombineSols(root_feature, left_leaves, right_children, branching_costs, new_node);
+			runtime_assert(new_node.solution >= -1e-6);
+			if (!OT::has_constraint || SatisfiesConstraint(new_node, context)) {
+				if (!OT::terminal_filter || !UBStrictDominatesRight<OT>(UB, new_node, rash_bound_delta)) {
+					if (new_node.solution < results.two_nodes_solutions.solution) results.two_nodes_solutions = new_node;
 				}
 			}
 		}
@@ -321,44 +354,16 @@ namespace STreeD {
 	void TerminalSolver<OT>::UpdateBestThreeNodeAssignment(const typename TerminalSolver<OT>::Context& context, int root_feature) {
 		auto left_children = children_info[root_feature].left_child_assignments;
 		auto right_children = children_info[root_feature].right_child_assignments;
-		if constexpr (!OT::total_order) {
-			Merge(root_feature, context, left_children, right_children);
-		} else {
-			if (!CheckEmptySol<OT>(left_children) && !CheckEmptySol<OT>(right_children)) {
-				auto branching_costs = cost_calculator.GetBranchingCosts(root_feature);
-				Node<OT> new_node;
-				CombineSols(root_feature, left_children, right_children, branching_costs, new_node);
-				runtime_assert(new_node.solution >= -1e-6);
-				if (!SatisfiesConstraint(new_node, context)) return;
-				if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, new_node)) return;
-				if (new_node.solution < results.three_nodes_solutions.solution) results.three_nodes_solutions = new_node;
-			}
+		if (!CheckEmptySol<OT>(left_children) && !CheckEmptySol<OT>(right_children)) {
+			auto branching_costs = cost_calculator.GetBranchingCosts(root_feature);
+			Node<OT> new_node;
+			CombineSols(root_feature, left_children, right_children, branching_costs, new_node);
+			runtime_assert(new_node.solution >= -1e-6);
+			if (!SatisfiesConstraint(new_node, context)) return;
+			if (OT::terminal_filter && UBStrictDominatesRight<OT>(UB, new_node, rash_bound_delta)) return;
+			if (new_node.solution < results.three_nodes_solutions.solution) results.three_nodes_solutions = new_node;
 		}
 
-	}
-
-	template<class OT>
-	template <typename U, typename std::enable_if<!U::total_order, int>::type>
-	void TerminalSolver<OT>::Merge(int feature, const typename TerminalSolver<OT>::Context& context, std::shared_ptr<Container<U>> left_solutions, std::shared_ptr<Container<U>> right_solutions) {
-		if (left_solutions->Size() == 0 || right_solutions->Size() == 0) return;
-		auto branching_costs = cost_calculator.GetBranchingCosts(feature);
-		{
-			Node<OT> node;
-			for (auto& left_sol : left_solutions->GetSolutions()) {
-				for (auto&  right_sol: right_solutions->GetSolutions()) {
-					int nodes = left_sol.NumNodes() + right_sol.NumNodes() + 1;
-
-					CombineSols(feature, left_sol, right_sol, branching_costs, node);
-					if (!SatisfiesConstraint(node, context)) continue;
-					if (OT::terminal_filter && LeftStrictDominatesRightSol<OT>(UB, node)) continue;
-					if (nodes == 2) {
-						results.two_nodes_solutions->Add(node);
-					} else if (nodes == 3) {
-						results.three_nodes_solutions->Add(node);
-					}
-				}
-			}
-		}
 	}
 
 	template<class OT>
@@ -391,14 +396,9 @@ namespace STreeD {
 				temp_leaf_node.label = assign_label;
 				temp_leaf_node.solution = sols[left_label].sol00;
 				if (LeftStrictDominatesRight<OT>(node.solution, temp_leaf_node.solution)) continue;
-				if constexpr (OT::total_order) {
-					if (temp_leaf_node.solution < left_solution.parent.solution) {
-						left_solution.parent = temp_leaf_node;
-					}
-				} else {
+				if (temp_leaf_node.solution < left_solution.parent.solution) {
 					left_solution.parent = temp_leaf_node;
-					left_solutions.push_back(left_solution);
-				}
+				} 
 			}
 		}
 		if (node.num_nodes_right == 0) {
@@ -407,13 +407,8 @@ namespace STreeD {
 				temp_leaf_node.label = assign_label;
 				temp_leaf_node.solution = sols[right_label].sol11;
 				if (LeftStrictDominatesRight<OT>(node.solution, temp_leaf_node.solution)) continue;
-				if constexpr (OT::total_order) {
-					if (temp_leaf_node.solution < right_solution.parent.solution) {
-						right_solution.parent = temp_leaf_node;
-					}
-				} else {
+				if (temp_leaf_node.solution < right_solution.parent.solution) {
 					right_solution.parent = temp_leaf_node;
-					right_solutions.push_back(right_solution);
 				}
 			}
 		}
@@ -438,13 +433,8 @@ namespace STreeD {
 							right_node.Set(INT32_MAX, right_assigned_label, sols[right_label].sol01, 0, 0);
 							CombineSols<OT>(f2, left_node, right_node, branching_costs, temp_node);
 							if(LeftStrictDominatesRight<OT>(node.solution, temp_node.solution)) continue;
-							if constexpr (OT::total_order) {
-								if (temp_node.solution < left_solution.parent.solution) {
-									left_solution.Set(temp_node, left_node, right_node);
-								}
-							} else {
+							if (temp_node.solution < left_solution.parent.solution) {
 								left_solution.Set(temp_node, left_node, right_node);
-								left_solutions.push_back(left_solution);
 							}
 						}
 					}
@@ -461,56 +451,24 @@ namespace STreeD {
 							right_node.Set(INT32_MAX, right_assigned_label, sols[right_label].sol11, 0, 0);
 							CombineSols<OT>(f2, left_node, right_node, branching_costs, temp_node);
 							if (LeftStrictDominatesRight<OT>(node.solution, temp_node.solution)) continue;
-							if constexpr (OT::total_order) {
-								if (temp_node.solution < right_solution.parent.solution) {
-									right_solution.Set(temp_node, left_node, right_node);
-								}
-							} else {
+							if (temp_node.solution < right_solution.parent.solution) {
 								right_solution.Set(temp_node, left_node, right_node);
-								right_solutions.push_back(right_solution);
 							}
 						}
 					}
 				}
 			}
 		}
-		if constexpr (OT::total_order) {
-			runtime_assert(left_solution.parent.IsFeasible());
-			runtime_assert(right_solution.parent.IsFeasible());
-			if (!left_solution.parent.IsFeasible() || !right_solution.parent.IsFeasible()) {
-				throw std::runtime_error("Could not find a feasible tree for the given solution.");
-			}
-			tree_node.Set(node, left_solution.parent, right_solution.parent);
-			return Tree<OT>::CreateD2TreeFromTreeNodes(tree_node, left_solution, right_solution);
-		} else {
-			auto branching_costs = cost_calculator.GetBranchingCosts(node.feature);
-			tree_node.parent = node;
-			for (const auto& left_sol : left_solutions) {
-				for (const auto& right_sol : right_solutions) {
-					if (CheckReconstructSolution<OT>(left_sol.parent, right_sol.parent, branching_costs, &tree_node)) {
-						return Tree<OT>::CreateD2TreeFromTreeNodes(tree_node, left_sol, right_sol);
-					}
-				}
-			}
-			runtime_assert(1 == 0);
+		runtime_assert(left_solution.parent.IsFeasible());
+		runtime_assert(right_solution.parent.IsFeasible());
+		if (!left_solution.parent.IsFeasible() || !right_solution.parent.IsFeasible()) {
 			throw std::runtime_error("Could not find a feasible tree for the given solution.");
 		}
+		tree_node.Set(node, left_solution.parent, right_solution.parent);
+		return Tree<OT>::CreateD2TreeFromTreeNodes(tree_node, left_solution, right_solution);
 	}
 
-	template class TerminalSolver<Accuracy>;
 	template class TerminalSolver<CostComplexAccuracy>;
-	template class TerminalSolver<BalancedAccuracy>;
-
-	template class TerminalSolver<Regression>;
 	template class TerminalSolver<CostComplexRegression>;
-	template class TerminalSolver<SimpleLinearRegression>;
-
-	template class TerminalSolver<CostSensitive>;
-	template class TerminalSolver<InstanceCostSensitive>;
-	template class TerminalSolver<F1Score>;
-	template class TerminalSolver<GroupFairness>;
-	template class TerminalSolver<EqOpp>;
-	template class TerminalSolver<PrescriptivePolicy>;
-	template class TerminalSolver<SurvivalAnalysis>;
 
 }

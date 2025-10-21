@@ -1,11 +1,14 @@
 /**
 Partly from Emir Demirovic "MurTree"
-https://bitbucket.org/EmirD/murtree
+https://bitbucket.org/EmirD/murtree 
+and partly from
+Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "base.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	class FeatureVector {
 	public:

@@ -1,10 +1,15 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #pragma once
 #include "base.h"
 #include "model/data.h"
 #include "model/branch.h"
 #include "solver/branch_cache.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	//adapted from https://stackoverflow.com/questions/20511347/a-good-hash-function-for-a-vector
 	//see also https://stackoverflow.com/questions/4948780/magic-number-in-boosthash-combine

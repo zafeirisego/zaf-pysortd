@@ -1,11 +1,13 @@
 /**
-From Emir Demirovic "MurTree"
+Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 
 #include "utils/parameter_handler.h"
 
-namespace STreeD {
+namespace SORTD {
     std::string ParameterHandler::GetStringParameter(const std::string& parameter_name) const {
         auto iter = parameters_string_.find(parameter_name);
         if (iter == parameters_string_.end()) { std::cout << "Unknown string parameter: " << parameter_name << "\n"; exit(1); }
@@ -180,31 +182,31 @@ namespace STreeD {
         }
     }
 
-    void ParameterHandler::PrintParametersDifferentFromDefault(std::ostream& out) {
+    void ParameterHandler::PrintParametersDifferentFromDefault(std::ostream& out) const {
         std::string complete_output = "";
         for (auto& category : categories_) {
             //out << category.name << "\n";
             std::string category_output = "";
             for (auto& parameters : category.parameters) {
                 if (parameters.type == "string") {
-                    if (parameters_string_[parameters.name].current_value != parameters_string_[parameters.name].default_value) {
-                        //out << "\t-" << parameters.name << " = " << parameters_string_[parameters.name].current_value << "\n";
-                        category_output += "\t-" + parameters.name + " = " + parameters_string_[parameters.name].current_value + "\n";
+                    if (parameters_string_.at(parameters.name).current_value != parameters_string_.at(parameters.name).default_value) {
+                        //out << "\t-" << parameters.name << " = " << parameters_string_.at(parameters.name).current_value << "\n";
+                        category_output += "\t-" + parameters.name + " = " + parameters_string_.at(parameters.name).current_value + "\n";
                     }
                 } else if (parameters.type == "integer") {
-                    if (parameters_integer_[parameters.name].current_value != parameters_integer_[parameters.name].default_value) {
-                        //out << "\t-" << parameters.name << " = " << parameters_integer_[parameters.name].current_value << "\n";
-                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_integer_[parameters.name].current_value) + "\n";
+                    if (parameters_integer_.at(parameters.name).current_value != parameters_integer_.at(parameters.name).default_value) {
+                        //out << "\t-" << parameters.name << " = " << parameters_integer_.at(parameters.name).current_value << "\n";
+                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_integer_.at(parameters.name).current_value) + "\n";
                     }
                 } else if (parameters.type == "Boolean") {
-                    if (parameters_boolean_[parameters.name].current_value != parameters_boolean_[parameters.name].default_value) {
-                        //out << "\t-" << parameters.name << " = " << parameters_boolean_[parameters.name].current_value << "\n";
-                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_boolean_[parameters.name].current_value) + "\n";
+                    if (parameters_boolean_.at(parameters.name).current_value != parameters_boolean_.at(parameters.name).default_value) {
+                        //out << "\t-" << parameters.name << " = " << parameters_boolean_.at(parameters.name).current_value << "\n";
+                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_boolean_.at(parameters.name).current_value) + "\n";
                     }
                 } else if (parameters.type == "float") {
-                    if (parameters_float_[parameters.name].current_value != parameters_float_[parameters.name].default_value) {
-                        //out << "\t-" << parameters.name << " = " << parameters_float_[parameters.name].current_value << "\n";
-                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_float_[parameters.name].current_value) + "\n";
+                    if (parameters_float_.at(parameters.name).current_value != parameters_float_.at(parameters.name).default_value) {
+                        //out << "\t-" << parameters.name << " = " << parameters_float_.at(parameters.name).current_value << "\n";
+                        category_output += "\t-" + parameters.name + " = " + std::to_string(parameters_float_.at(parameters.name).current_value) + "\n";
                     }
                 } else {
                     std::cout << "Internal error, undefined type " << parameters.type << std::endl;
@@ -224,18 +226,18 @@ namespace STreeD {
         }
     }
 
-    void ParameterHandler::PrintParameterValues(std::ostream& out) {
+    void ParameterHandler::PrintParameterValues(std::ostream& out) const {
         for (auto& category : categories_) {
             out << category.name << "\n";
             for (auto& parameters : category.parameters) {
                 if (parameters.type == "string") {
-                    out << "\t-" << parameters.name << " = " << parameters_string_[parameters.name].current_value << "\n";
+                    out << "\t-" << parameters.name << " = " << parameters_string_.at(parameters.name).current_value << "\n";
                 } else if (parameters.type == "integer") {
-                    out << "\t-" << parameters.name << " = " << parameters_integer_[parameters.name].current_value << "\n";
+                    out << "\t-" << parameters.name << " = " << parameters_integer_.at(parameters.name).current_value << "\n";
                 } else if (parameters.type == "Boolean") {
-                    out << "\t-" << parameters.name << " = " << parameters_boolean_[parameters.name].current_value << "\n";
+                    out << "\t-" << parameters.name << " = " << parameters_boolean_.at(parameters.name).current_value << "\n";
                 } else if (parameters.type == "float") {
-                    out << "\t-" << parameters.name << " = " << parameters_float_[parameters.name].current_value << "\n";
+                    out << "\t-" << parameters.name << " = " << parameters_float_.at(parameters.name).current_value << "\n";
                 } else {
                     std::cout << "Internal error, undefined type " << parameters.type << "\n";
                     exit(1);
@@ -252,6 +254,7 @@ namespace STreeD {
             for (auto& parameters : category.parameters) {
                 if (parameters.type == "string") {
                     auto& entry = parameters_string_[parameters.name];
+//                    if (!entry.enabled) continue;
 
                     out << "\t-" << entry.name << ".\n\t\tString. " << entry.short_description << "\n";
                     out << "\t\tDefault value: " << entry.default_value << "\n";
@@ -265,17 +268,20 @@ namespace STreeD {
                     if (entry.optional) out << "Optional" << std::endl;
                 } else if (parameters.type == "integer") {
                     auto& entry = parameters_integer_[parameters.name];
+//                    if (!entry.enabled) continue;
 
                     out << "\t-" << entry.name << ".\n\t\tInteger. " << entry.short_description << "\n";
                     out << "\t\tDefault value: " << entry.default_value << "\n";
                     out << "\t\tRange = [" << entry.min_value << ", " << entry.max_value << "]\n";
                 } else if (parameters.type == "Boolean") {
                     auto& entry = parameters_boolean_[parameters.name];
+//                    if (!entry.enabled) continue;
 
                     out << "\t-" << entry.name << ". Boolean.\n\t\t" << entry.short_description << "\n";
                     out << "\t\tDefault value: " << entry.default_value << "\n";
                 } else if (parameters.type == "float") {
                     auto& entry = parameters_float_[parameters.name];
+//                    if (!entry.enabled) continue;
 
                     out << "\t-" << entry.name << ". Float.\n\t\t" << entry.short_description << "\n";
                     out << "\t\tDefault value: " << entry.default_value << "\n";

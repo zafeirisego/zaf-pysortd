@@ -1,6 +1,8 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 
@@ -10,10 +12,10 @@ https://bitbucket.org/EmirD/murtree
 #include "model/data.h"
 #include "model/branch.h"
 
-namespace STreeD {
+namespace SORTD {
 	template <class OT>
 	struct PairLowerBoundOptimal {
-		using SolContainer = typename std::conditional<OT::total_order, Node<OT>, std::shared_ptr<Container<OT>>>::type;
+		using SolContainer = Node<OT>;
 
 		PairLowerBoundOptimal(SolContainer& lb, bool opt) :lower_bound(lb), optimal(opt) {}
 		SolContainer lower_bound;
@@ -32,7 +34,7 @@ namespace STreeD {
 	template <class OT>
 	class SimilarityLowerBoundComputer {
 		using SolType = typename OT::SolType;
-		using SolContainer = typename std::conditional<OT::total_order, Node<OT>, std::shared_ptr<Container<OT>>>::type;
+		using SolContainer = Node<OT>;
 
 	public:
 		SimilarityLowerBoundComputer(OT* optimization_task, int num_labels, int max_depth, int num_nodes, int num_instances);

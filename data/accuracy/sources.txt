@@ -1,0 +1,164 @@
+When reusing the datasets in this repository, please refer to the sources as mentioned below:
+
+
+Anneal
+Annealing [Dataset].  UCI Machine Learning Repository. https://doi.org/10.24432/C5RW2F.
+https://archive.ics.uci.edu/dataset/3/annealing
+License: CC BY 4.0
+
+
+Bank Marketing
+Moro, S., Rita, P., & Cortez, P. (2014). Bank Marketing [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5K306.
+https://archive.ics.uci.edu/dataset/222/bank+marketing
+License: CC BY 4.0
+
+
+Banknote Authentication
+Lohweg, V. (2012). Banknote Authentication [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C55P57.
+https://archive.ics.uci.edu/dataset/267/banknote+authentication
+License: CC BY 4.0
+
+
+Bar-7
+Wang, T., Rudin, C., Doshi-Velez, F., Liu, Y., Klampfl, E., & MacNeille, P. (2017). A bayesian framework for learning rule sets for interpretable classification. Journal of Machine Learning Research, 18(70), 1-37.
+https://github.com/wangtongada/BOA?tab=readme-ov-file
+MIT License
+
+
+Biodeg
+Mansouri, K., Ringsted, T., Ballabio, D., Todeschini, R., & Consonni, V. (2013). QSAR biodegradation [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5H60M.
+https://archive.ics.uci.edu/dataset/254/qsar+biodegradation
+License: CC BY 4.0
+
+
+Breast Cancer Wisconsin
+Wolberg, W. (1990). Breast Cancer Wisconsin (Original) [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5HP4Z.
+https://archive.ics.uci.edu/dataset/15/breast+cancer+wisconsin+original
+License: CC BY 4.0
+
+
+Car Evaluation
+Bohanec, M. (1988). Car Evaluation [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5JP48.
+https://archive.ics.uci.edu/dataset/19/car+evaluation
+License: CC BY 4.0
+
+
+Cheap Restaurant
+Wang, T., Rudin, C., Doshi-Velez, F., Liu, Y., Klampfl, E., & MacNeille, P. (2017). A bayesian framework for learning rule sets for interpretable classification. Journal of Machine Learning Research, 18(70), 1-37.
+https://github.com/wangtongada/BOA?tab=readme-ov-file
+MIT License
+
+
+Coffee House
+Wang, T., Rudin, C., Doshi-Velez, F., Liu, Y., Klampfl, E., & MacNeille, P. (2017). A bayesian framework for learning rule sets for interpretable classification. Journal of Machine Learning Research, 18(70), 1-37.
+https://github.com/wangtongada/BOA?tab=readme-ov-file
+MIT License
+
+
+Compas
+https://github.com/propublica/compas-analysis
+Angwin, J., Larson, J., Mattu, S., & Kirchner, L. (2016). Machine Bias. ProPublica. 
+https://www.propublica.org/article/how-we-analyzed-the-compas-recidivism-algorithm
+No license information, therefore not included in this repository. The data can be obtained through the link
+
+
+Expensive Restaurant
+Wang, T., Rudin, C., Doshi-Velez, F., Liu, Y., Klampfl, E., & MacNeille, P. (2017). A bayesian framework for learning rule sets for interpretable classification. Journal of Machine Learning Research, 18(70), 1-37.
+https://github.com/wangtongada/BOA?tab=readme-ov-file
+MIT License
+
+
+Fico
+https://community.fico.com/s/explainable-machine-learning-challenge
+
+
+Haberman
+Haberman, S. (1976). Haberman's Survival [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5XK51.
+https://archive.ics.uci.edu/dataset/43/haberman+s+survival
+License: CC BY 4.0
+
+
+Hepatitis
+Hepatitis [Dataset]. (1983). UCI Machine Learning Repository. https://doi.org/10.24432/C5Q59J.
+https://archive.ics.uci.edu/dataset/46/hepatitis
+License: CC BY 4.0
+
+
+HTRU2
+Lyon, R. (2015). HTRU2 [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK6R.
+https://archive.ics.uci.edu/dataset/372/htru2
+License: CC BY 4.0
+
+
+Hypothroid
+Quinlan, R. (1986). Thyroid Disease [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5D010.
+https://archive.ics.uci.edu/dataset/102/thyroid+disease
+License: CC BY 4.0
+
+
+kr-vs-kp
+Shapiro, A. (1983). Chess (King-Rook vs. King-Pawn) [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5DK5C.
+https://archive.ics.uci.edu/dataset/22/chess%2Bking%2Brook%2Bvs%2Bking%2Bpawn?utm_source=chatgpt.com
+License: CC BY 4.0
+
+Lymph
+Zwitter, M. & Soklic, M. (1988). Lymphography [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C54598.
+https://archive.ics.uci.edu/dataset/63/lymphography
+License: CC BY 4.0
+
+
+Messidor
+https://www.adcis.net/en/third-party/messidor/
+
+
+Monk1
+Wnek, J. (1993). MONK's Problems [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5R30R.
+https://archive.ics.uci.edu/dataset/70/monk+s+problems
+License: CC BY 4.0
+
+
+Monk2
+Wnek, J. (1993). MONK's Problems [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5R30R.
+https://archive.ics.uci.edu/dataset/70/monk+s+problems
+License: CC BY 4.0
+
+
+Monk3 
+Wnek, J. (1993). MONK's Problems [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5R30R.
+https://archive.ics.uci.edu/dataset/70/monk+s+problems
+License: CC BY 4.0
+
+
+Primary Tumor
+Zwitter, M. & Soklic, M. (1987). Primary Tumor [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5WK5Q.
+https://archive.ics.uci.edu/dataset/83/primary+tumor
+License: CC BY 4.0
+
+
+Spect 
+Cios, K., Kurgan, L., & Goodenday, L. (2001). SPECT Heart [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5P304.
+https://archive.ics.uci.edu/dataset/95/spect+heart
+License: CC BY 4.0
+
+
+Tic-tac-toe
+Aha, D. (1991). Tic-Tac-Toe Endgame [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5688J.
+https://archive.ics.uci.edu/dataset/101/tic+tac+toe+endgame
+License: CC BY 4.0
+
+
+Vote
+Congressional Voting Records [Dataset]. (1987). UCI Machine Learning Repository. https://doi.org/10.24432/C5C01P.
+https://archive.ics.uci.edu/dataset/105/congressional+voting+records
+License: CC BY 4.0
+
+
+Yeast
+Nakai, K. (1991). Yeast [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5KG68.
+https://archive.ics.uci.edu/dataset/110/yeast
+License: CC BY 4.0
+
+
+
+With thanks to the UCI Machine Learning repository
+Dua, D. and Graff, C. (2019). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.

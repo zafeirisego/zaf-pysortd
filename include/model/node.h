@@ -1,7 +1,18 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
 
-namespace STreeD {
+namespace SORTD {
+
+    template <class OT>
+    struct Tree;
+
+//    template <class OT>
+//    class Tree;
 
 	// A node represents a solution to a subproblem.
 	template<class OT>
@@ -45,6 +56,22 @@ namespace STreeD {
 				&& num_nodes_left == other.num_nodes_left && num_nodes_right == other.num_nodes_right;
 		}
 
+        inline bool operator<(const Node<OT>& other) const {
+            if (std::abs(solution - other.solution) < 1e-4) {
+                return NumNodes() < other.NumNodes();
+            }
+            return solution < other.solution;
+        }
+
+
+//        inline bool IsRecursivelyEqual(const Node<OT>& other) const {
+//            if(!(feature == other.feature && label == other.label && solution == other.solution
+//               && num_nodes_left == other.num_nodes_left && num_nodes_right == other.num_nodes_right))
+//                return false;
+//
+//            return tree->IsRecursivelyEqual(other.tree);
+//        }
+
 		// The feature to branch on (INT32_MAX if the node is a leaf node)
 		int feature;
 		// The label of the leaf node or (OT::worst_label) if the node is branching node.
@@ -55,7 +82,7 @@ namespace STreeD {
 		// The number of left children of this node
 		int num_nodes_left;
 
-		// The number of right childre nof this node
+		// The number of right children of this node
 		int num_nodes_right;
 	};
 

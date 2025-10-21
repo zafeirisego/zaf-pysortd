@@ -1,7 +1,13 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
+
 #include "solver/result.h"
 #include "tasks/tasks.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	int SolverResult::GetBestDepth() const {
 		return depths[best_index];

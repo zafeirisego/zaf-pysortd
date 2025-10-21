@@ -1,6 +1,11 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "solver/terminal_solver.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	CostCalculator<OT>::CostCalculator(OT* task, int num_features, int num_labels, const std::vector<int>& feature_order) : num_features(num_features), 
@@ -105,6 +110,20 @@ namespace STreeD {
 			}
 			return;
 		}
+
+		/*for (int i = 0; i < num_present_features; i++) {
+			const int feature1 = data_point->GetJthPresentFeature(i);
+			int ix = _cost_storage.IndexSymmetricMatrixOneDim(feature1);
+			for (int j = i; j < num_present_features; j++) {
+				const int feature2 = data_point->GetJthPresentFeature(j);
+				if constexpr (update_cost) {
+					_cost_storage.UpdateCosts(ix + feature2, costs);
+				}
+				if constexpr (update_count) {
+					counter.UpdateCount(ix + feature2, multiplier);
+				}
+			}
+		}*/
 		
 		for (const int& index: data_point->GetPresentFeaturePairIndices()) {
 			if constexpr (update_cost) {
@@ -210,9 +229,18 @@ namespace STreeD {
 	template <class OT>
 	void CostCalculator<OT>::UpdateBranchingCosts(const ADataView& data, const typename CostCalculator<OT>::Context& context) {
 		if constexpr (OT::has_branching_costs) {
-
 			if constexpr (OT::element_branching_costs) {
 				runtime_assert(1 == 0);// Not implemented yet
+			} else if (OT::constant_branching_costs) {
+				// Still need to consider the case that the root note computes twice the branching costs (a bit hacky)
+				typename CostCalculator<OT>::Context sub_context;
+				task->GetLeftContext(data, context, 0, sub_context); 
+				auto branching_costs_d0 = task->GetBranchingCosts(context, 0);
+				auto branching_costs_d1 = task->GetBranchingCosts(sub_context, 0);
+				for (int f1 = 0; f1 < data.NumFeatures(); f1++) {
+					std::fill(branching_costs[f1].begin(), branching_costs[f1].end(), branching_costs_d1);
+					branching_costs[f1][f1] = branching_costs_d0;					
+				}
 			} else {
 				typename CostCalculator<OT>::Context sub_context;
 				for (int f1 = 0; f1 < data.NumFeatures(); f1++) {
@@ -267,11 +295,11 @@ namespace STreeD {
 	}
 
 	template <class OT>
-	void CostCalculator<OT>::CalcLeafSol(SolType& sol, int label, SolLabelType& label_out) const {
+	void CostCalculator<OT>::CalcLeafSol(SolType& sol, int label, SolLabelType& label_out, const std::optional<BranchContext>& context) const {
 		const auto& _cost_storage = cost_storage[label];
 		const auto& total_costs = _cost_storage.GetTotalCosts();
 		int count = counter.GetTotalCount();
-		task->ComputeD2Costs(total_costs, count, sol);
+		task->ComputeD2Costs(total_costs, count, sol, context);
 		if constexpr (OT::custom_get_label || std::is_same<typename OT::LabelType, double>::value) {
 			label_out = GetLabel(label, total_costs, count);
 		} else {
@@ -344,6 +372,54 @@ namespace STreeD {
 		task->ComputeD2Costs(temp_costs1, counts.count01, sols.sol01);
 		// temp costs2 is still costs for f1 but not f2
 		task->ComputeD2Costs(temp_costs2, counts.count10, sols.sol10);
+	}
+
+	template <class OT>
+	void CostCalculator<OT>::CalcSols(const Counts& counts, Sols<OT>& sols, Labels<OT>& labels, int label, const IndexInfo& index) const {
+		const auto& _cost_storage = cost_storage[label];
+		const auto& total_costs = _cost_storage.GetTotalCosts();
+		const auto& costsf1f2 = _cost_storage.GetCosts(index.ix_f1f2);
+		const auto& costsf1f1 = _cost_storage.GetCosts(index.ix_f1f1);
+		const auto& costsf2f2 = _cost_storage.GetCosts(index.ix_f2f2);
+
+		if (index.equal) {
+			temp_costs1 = total_costs;
+			temp_costs1 -= costsf1f2;
+			task->ComputeD2Costs(temp_costs1, counts.count00, sols.sol00);
+			task->ComputeD2Costs(costsf1f2, counts.count11, sols.sol11);
+			labels.label00 = GetLabel(label, temp_costs1, counts.count00);
+			labels.label11 = GetLabel(label, costsf1f2, counts.count11);
+			return;
+		}
+		// Temp_costs2 = costs for f1, but not f2
+		temp_costs2 = costsf1f1;
+		temp_costs2 -= costsf1f2;
+
+		// Temp costs1 = costs for neither f1 nor f2
+		temp_costs1 = total_costs;
+		temp_costs1 -= temp_costs2;
+		temp_costs1 -= costsf2f2;
+		task->ComputeD2Costs(temp_costs1, counts.count00, sols.sol00);
+		task->ComputeD2Costs(costsf1f2, counts.count11, sols.sol11);
+		labels.label00 = GetLabel(label, temp_costs1, counts.count00);
+		labels.label11 = GetLabel(label, costsf1f2, counts.count11);
+		if (index.swap) {
+			temp_costs1 = costsf2f2; temp_costs1 -= costsf1f2;
+			temp_costs2 = costsf1f1; temp_costs2 -= costsf1f2;
+			task->ComputeD2Costs(temp_costs1, counts.count10, sols.sol10);
+			task->ComputeD2Costs(temp_costs2, counts.count01, sols.sol01);
+			labels.label10 = GetLabel(label, temp_costs1, counts.count10);
+			labels.label01 = GetLabel(label, temp_costs2, counts.count01);
+			return;
+		}
+		// Temp costs1 = costs for f2 but not f1
+		temp_costs1 = costsf2f2;
+		temp_costs1 -= costsf1f2;
+		task->ComputeD2Costs(temp_costs1, counts.count01, sols.sol01);
+		// temp costs2 is still costs for f1 but not f2
+		task->ComputeD2Costs(temp_costs2, counts.count10, sols.sol10);
+		labels.label01 = GetLabel(label, temp_costs1, counts.count01);
+		labels.label10 = GetLabel(label, temp_costs2, counts.count10);
 	}
 
 	template <class OT>
@@ -451,6 +527,17 @@ namespace STreeD {
 		return counter.GetCount(f1, f2);
 	}
 
+	//template <class OT>
+	//const typename CostCalculator<OT>::SolLabelType CostCalculator<OT>::GetLeafLabel(int label) const {
+	//	if constexpr (OT::custom_get_label || std::is_same<typename OT::LabelType, double>::value) {
+	//		auto sum = GetCosts00(label, 0, 0) + GetCosts11(label, 0, 0);
+	//		int count = GetCount00(0, 0) + GetCount11(0, 0);
+	//		return task->GetLabel(sum, count);
+	//	} else {
+	//		return label;
+	//	}
+	//}
+
 	template <class OT>
 	const typename CostCalculator<OT>::SolLabelType CostCalculator<OT>::GetLabel00(int label, int f1, int f2) const {
 		if constexpr (OT::custom_get_label || std::is_same<typename OT::LabelType, double>::value) {
@@ -496,21 +583,7 @@ namespace STreeD {
 		}
 	}
 
-	template class CostCalculator<Accuracy>;
 	template class CostCalculator<CostComplexAccuracy>;
-	template class CostCalculator<BalancedAccuracy>;
-
-	template class CostCalculator<Regression>;
 	template class CostCalculator<CostComplexRegression>;
-	template class CostCalculator<SimpleLinearRegression>;
-
-	template class CostCalculator<CostSensitive>;
-	template class CostCalculator<InstanceCostSensitive>;
-	template class CostCalculator<F1Score>;
-	template class CostCalculator<GroupFairness>;
-
-	template class CostCalculator<EqOpp>;
-	template class CostCalculator<PrescriptivePolicy>;
-	template class CostCalculator<SurvivalAnalysis>;
 	
 }

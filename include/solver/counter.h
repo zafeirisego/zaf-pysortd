@@ -1,11 +1,13 @@
 /**
-Partly from Emir Demirovic "MurTree bi-objective"
-https://bitbucket.org/EmirD/murtree-bi-objective
+Partly from Emir Demirovic "MurTree"
+https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "base.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	// Store the counts (number of instances) of all four leaf nodes of a depth-two tree
 	struct Counts {

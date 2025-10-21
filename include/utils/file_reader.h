@@ -1,3 +1,8 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
 
@@ -5,7 +10,7 @@
 #include "model/feature_vector.h"
 #include "model/data.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	class FileReader {
 	public:

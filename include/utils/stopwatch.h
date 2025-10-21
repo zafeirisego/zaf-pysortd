@@ -5,7 +5,7 @@ https://bitbucket.org/EmirD/murtree
 #pragma once
 #include <base.h>
 
-namespace STreeD {
+namespace SORTD {
 
 	class Stopwatch {
 	public:

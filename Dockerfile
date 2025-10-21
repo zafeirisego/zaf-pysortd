@@ -1,3 +1,8 @@
+ 
+# From Jacobus G.M. van der Linden “STreeD”
+# https://github.com/AlgTUDelft/pystreed 
+
+
 FROM gcc:9.4
 
 # https://github.com/Rikorose/gcc-cmake/blob/master/Dockerfile
@@ -11,19 +16,19 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cm
 
 ENV PATH="/usr/bin/cmake/bin:${PATH}"
 
-RUN mkdir /STreeD
-WORKDIR /STreeD
-ADD data /STreeD/data/
-ADD include /STreeD/include/
-ADD src /STreeD/src/
-ADD test /STreeD/test/
-ADD CMakeLists.txt /STreeD/
+RUN mkdir /SORTD
+WORKDIR /SORTD
+ADD data /SORTD/data/
+ADD include /SORTD/include/
+ADD src /SORTD/src/
+ADD test /SORTD/test/
+ADD CMakeLists.txt /SORTD/
 
 RUN mkdir build
-WORKDIR /STreeD/build 
+WORKDIR /SORTD/build 
 RUN cmake ..
 RUN cmake --build .
 RUN ctest
-WORKDIR /STreeD 
+WORKDIR /SORTD 
 
 

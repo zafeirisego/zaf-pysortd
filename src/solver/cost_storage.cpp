@@ -1,11 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree bi-objective"
 https://bitbucket.org/EmirD/murtree-bi-objective
+ Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "solver/cost_storage.h"
 #include "solver/solver.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	template <class OT>
 	CostStorage<OT>::CostStorage(int num_features) : num_features(num_features) {
@@ -64,20 +66,7 @@ namespace STreeD {
 		return num_features * index_row - index_row * (index_row + 1) / 2;
 	}
 
-	template class CostStorage<Accuracy>;
 	template class CostStorage<CostComplexAccuracy>;
-	template class CostStorage<BalancedAccuracy>;
-
-	template class CostStorage<Regression>;
 	template class CostStorage<CostComplexRegression>;
-	template class CostStorage<SimpleLinearRegression>;
-
-	template class CostStorage<CostSensitive>;
-	template class CostStorage<InstanceCostSensitive>;
-	template class CostStorage<F1Score>;
-	template class CostStorage<GroupFairness>;
-	template class CostStorage<EqOpp>;
-	template class CostStorage<PrescriptivePolicy>;
-	template class CostStorage<SurvivalAnalysis>;
 
 }

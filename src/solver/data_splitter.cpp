@@ -1,6 +1,12 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
+
 #include "solver/data_splitter.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	void DataSplitter::Split(const ADataView& data, const Branch& branch, int feature, ADataView& left, ADataView& right, bool test) {
 		if (enabled) {

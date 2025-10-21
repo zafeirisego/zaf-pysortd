@@ -1,7 +1,12 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #include "base.h"
 #include <climits>
 
-namespace STreeD {
+namespace SORTD {
 
 	struct DynamicBitSet {
 		using BaseType = unsigned long;
@@ -80,15 +85,15 @@ namespace STreeD {
 namespace std {
 
 	template <>
-	struct hash<STreeD::DynamicBitSet> {
+	struct hash<SORTD::DynamicBitSet> {
 
 		//adapted from https://stackoverflow.com/questions/20511347/a-good-hash-function-for-a-vector
-		size_t operator()(const STreeD::DynamicBitSet& bitset) const {
+		size_t operator()(const SORTD::DynamicBitSet& bitset) const {
 			using std::size_t;
 			using std::hash;
 			size_t seed = 0;
 			for (int i = 0; i < bitset.elements; i++) {
-				seed ^= hash<STreeD::DynamicBitSet::BaseType>()(bitset.bitset[i]) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+				seed ^= hash<SORTD::DynamicBitSet::BaseType>()(bitset.bitset[i]) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			}
 			return seed;
 		}

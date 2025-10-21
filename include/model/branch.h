@@ -1,7 +1,12 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	/*
 	* Class that stores information about the branch
@@ -14,6 +19,7 @@ namespace STreeD {
 	public:
 		Branch() = default;
 		Branch(const Branch& other);
+        Branch(std::vector<int> codes) : branch_codes(codes) {};
 
 		inline int Depth() const { return int(branch_codes.size()); }
 		inline int operator[](int i) const { return branch_codes[i]; }

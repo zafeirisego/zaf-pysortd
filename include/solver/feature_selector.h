@@ -1,9 +1,14 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #pragma once
 #include "base.h"
 #include "model/data.h"
 #include "utils/key_value_heap.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	class FeatureSelectorAbstract {
 	public:
@@ -53,21 +58,6 @@ namespace STreeD {
 		FeatureSelectorGini() = delete;
 		FeatureSelectorGini(int num_features) : FeatureSelectorAbstract(num_features), feature_order(num_features) {}
 		~FeatureSelectorGini() = default;
-	protected:
-		int PopNextFeatureInternal() {
-			return feature_order.PopMax();
-		}
-		void InitializeInternal(const ADataView& data);
-
-	private:
-		KeyValueHeap feature_order;
-	};
-
-	class FeatureSelectorMSE : public FeatureSelectorAbstract {
-	public:
-		FeatureSelectorMSE() = delete;
-		FeatureSelectorMSE(int num_features) : FeatureSelectorAbstract(num_features), feature_order(num_features) {}
-		~FeatureSelectorMSE() = default;
 	protected:
 		int PopNextFeatureInternal() {
 			return feature_order.PopMax();

@@ -23,11 +23,20 @@ https://gitlab.tudelft.nl/jgmvanderlinde/dpf
 #include "model/branch.h"
 #include "model/node.h"
 #include "model/container.h"
+#include "utils/pointer_pool.h"
+#include "rashomon/rashomon_terminal_solver.h"
+#include "rashomon/solution_tracker.h"
 
 
 #define MAX_DEPTH 20
 
-namespace STreeD {
+namespace SORTD {
+
+    template <class OT>
+    struct SolutionSet;
+
+    template <class OT>
+    struct CompareSolutionSets;
 	
 	struct SolverParameters {
 		SolverParameters(const ParameterHandler& parameters);
@@ -42,6 +51,8 @@ namespace STreeD {
 		bool use_lower_bound_early_stop{ true };
 		int minimum_leaf_node_size{ 1 };
 		size_t UB_LB_max_size{ 12 };
+        double rashomon_multiplier{1.0};
+        bool ignore_trivial_extentions{false};
 	};
 
 	struct ProgressTracker {
@@ -62,8 +73,8 @@ namespace STreeD {
 		AbstractSolver(ParameterHandler& parameters, std::default_random_engine* rng);
 		void UpdateParameters(const ParameterHandler& parameters);
 		inline const ParameterHandler& GetParameters() const { return parameters; }
+		inline Statistics& GetStatistics() { return stats; }
 		virtual std::shared_ptr<SolverResult> Solve(const ADataView& train_data) = 0;
-		virtual std::shared_ptr<SolverResult> HyperSolve(const ADataView& train_data) = 0;
 		virtual std::shared_ptr<SolverResult> TestPerformance(const std::shared_ptr<SolverResult>& result, const ADataView& test_data) = 0;
 		virtual void InitializeTest(const ADataView& test_data, bool reset = false) = 0;
 		inline void SetVerbosity(bool verbose) { solver_parameters.verbose = verbose; }
@@ -74,8 +85,9 @@ namespace STreeD {
 		inline int NumFeatures() const { return train_data.NumFeatures(); }
 		inline bool IsTerminalNode(int depth, int num_nodes) { return solver_parameters.use_terminal_solver && depth <= 2; }
 		inline std::string GetTaskString() const { return parameters.GetStringParameter("task"); }
+        inline DataSplitter GetSplitter() const { return data_splitter; }
 		inline const std::vector<int>& GetFeatureOrder() const { return feature_order; }
-		
+		inline const ADataView& GetTrainData() const { return train_data; }
 
 	protected:
 		SolverParameters solver_parameters;
@@ -99,6 +111,9 @@ namespace STreeD {
 	using TerminalSolver_C = typename std::conditional < OT::use_terminal, TerminalSolver<OT>*, void*>::type;
 
 	template <class OT>
+	using RashTerminalSolver_C = typename std::conditional < OT::use_terminal, RashomonTerminalSolver<OT>*, void*>::type;
+
+	template <class OT>
 	using SimilarityLowerBound_C = typename std::conditional < OT::element_additive, SimilarityLowerBoundComputer<OT>*, void*>::type;
 
 	template <class OT>
@@ -106,12 +121,13 @@ namespace STreeD {
 	public:
 
 		using SolType = typename OT::SolType;			// The type of the solution value. E.g., int for misclassification score, double for sum of squared errors
-		using SolContainer = typename std::conditional<OT::total_order, Node<OT>, std::shared_ptr<Container<OT>>>::type;
+		using SolContainer = Node<OT>;
 		using Context = typename OT::ContextType;		// The class type of the context (default = BranchContext)
 		using LabelType = typename OT::LabelType;		// The class of the (input) label, e.g., double for regression, int for classification
 		using SolLabelType = typename OT::SolLabelType; // The class of the leaf label, e.g., int for classification, or linear model for piecewise linear regression
-		static constexpr bool sparse_objective = OT::total_order && OT::has_branching_costs
-			&& OT::constant_branching_costs && (std::is_same<typename OT::SolType, double>::value || std::is_same<typename OT::SolType, int>::value);
+		using SolutionTracker = AbstractSolutionTracker<OT>;
+		static constexpr bool sparse_objective = OT::has_branching_costs
+                && OT::constant_branching_costs && (std::is_same<typename OT::SolType, double>::value || std::is_same<typename OT::SolType, int>::value);
 
 		Solver(ParameterHandler& parameters, std::default_random_engine* rng);
 		~Solver();
@@ -149,17 +165,17 @@ namespace STreeD {
 		* Find the optimal tree for the given training data 
 		*/
 		std::shared_ptr<SolverResult> Solve(const ADataView& train_data);
-		
-		/*
-		* Hypertune the parameters as specified by the optimization task
-		* Find the optimal tree using hypertuning for the given training data and evaluate on the training and test data
-		*/
-		std::shared_ptr<SolverResult> HyperSolve(const ADataView& train_data);
 
 		/*
 		* Returns the test performance over test data given the trees in result
 		*/
 		std::shared_ptr<SolverResult> TestPerformance(const std::shared_ptr<SolverResult>& result, const ADataView& test_data);
+
+
+        /*
+		* Returns the test performance over test data given the tree in the rashomon set
+		*/
+        double RashomonTestPerformance(const Tree<OT>* tree, const ADataView& _test_data);
 
 		/*
 		* Returns labels for test data given the tree
@@ -173,6 +189,13 @@ namespace STreeD {
 		SolContainer SolveSubTree(ADataView& data, const Context& context, SolContainer UB, int max_depth, int num_nodes);
 
 		/*
+		* Solve an independent subtree for the given data and context with at most size limits given by max_depth and num_nodes
+		* Only return solutions that are not dominated by the upper bound UB
+		* Iteratively tries with a larger UB until it finds something that fits the original UB
+		*/
+		SolContainer SolveSubTreeIncrementalUB(ADataView& data, const Context& context, SolType UB, int max_depth, int num_nodes);
+
+		/*
 		* Apply a recursive step in the search for optimal trees: split on all possible features and retain all non-dominated solutions
 		*/
 		SolContainer SolveSubTreeGeneralCase(ADataView& data, const Context& context, SolContainer& UB, SolContainer& solutions, int max_depth, int num_nodes);
@@ -184,28 +207,12 @@ namespace STreeD {
 		template <typename U = OT, typename std::enable_if<U::use_terminal, int>::type = 0>
 		SolContainer SolveTerminalNode(ADataView& data, const Context& context, SolContainer& UB, int max_depth, int num_nodes);
 
+        std::pair<std::shared_ptr<std::vector<std::shared_ptr<SolutionTracker>>>,int> SolveRashomonTerminalNode(ADataView& data, const Context& context, SolContainer& UB, int max_depth, int num_nodes);
+
 		/*
 		* Solve a leaf node
 		*/
 		SolContainer SolveLeafNode(const ADataView& data, const Context& context, SolContainer& UB) const;
-
-		/*
-		* Merge Pareto-fronts from a left and right subtree
-		* in a given context
-		* when splitting on feature, with branching costs
-		* store the result in final_sols
-		* if reconstruct=true, store the result in tree instead.
-		*/
-		template <bool reconstruct=false, typename U = OT, typename std::enable_if<!U::total_order, int>::type = 0>
-		void Merge(int feature, const Context& context, SolContainer& UB, SolContainer& left_sols, SolContainer& right_sols, const SolType& branching_costs, SolContainer& final_sols,
-			TreeNode<U>* tree = nullptr);
-
-		/*
-		* Merge two Pareto-front lower bounds
-		* Limit the size of the new lower bound to improve computation speed
-		*/
-		template <typename U = OT, typename std::enable_if<!U::total_order, int>::type = 0>
-		void LBMerge(int feature, const Context& context, SolContainer& left_sols, SolContainer& right_sols, const SolType& branching_costs, SolContainer& final_sols);
 
 		/*
 		* Compute a lower bound
@@ -251,12 +258,23 @@ namespace STreeD {
 		* Construct the tree for a given solution from the cache
 		*/
 		std::shared_ptr<Tree<OT>> ConstructOptimalTree(const Node<OT>& sol, ADataView& data, const Context& context, int max_depth, int num_nodes);
-		
+
 		/*
-		* Search for other cached solutions that are based on datasets similar to this dataset.
-		* Update lower bounds in the cache using the similarity lower bound if appropriate.
-		* returns true iff the method updated the optimal solution of the branch; 
+		* Construct the rashomon set
 		*/
+		void ConstructBruteForceRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result, const Node<OT>& sol, ADataView& data, int max_depth, int num_nodes);
+
+        void ConstructRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result);
+
+        void Generate2FeatureRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result, SolType threshold, ADataView& data, int max_depth, int max_num_nodes);
+
+        std::shared_ptr<Tree<OT>> ConstructD1Tree(ADataView data, int feature, Solver<OT>::Context context, ADataView& left_data, ADataView& right_data, Solver<OT>::Context& left_context, Solver<OT>::Context& right_context);
+
+            /*
+            * Search for other cached solutions that are based on datasets similar to this dataset.
+            * Update lower bounds in the cache using the similarity lower bound if appropriate.
+            * returns true iff the method updated the optimal solution of the branch;
+            */
 		template <typename U = OT, typename std::enable_if<U::element_additive, int>::type = 0>
 		bool UpdateCacheUsingSimilarity(ADataView& data, const Branch& branch, int max_depth, int num_nodes);
 
@@ -269,6 +287,11 @@ namespace STreeD {
 		* Get the task
 		*/
 		inline OT* GetTask() const { return task; }
+
+		/*
+		* Get the cache
+		*/
+		inline Cache<OT>* GetCache() const { return cache; }
 
 		/*
 		* Preprocess the data
@@ -296,18 +319,89 @@ namespace STreeD {
 		void ReduceNodeBudget(const ADataView& data, const Context& context, const SolContainer& UB, int& max_depth, int& num_nodes) const;
 
 		/*
+		* Store a tree in the tree storage
+		*/
+		void AddTreeToStorage(Tree<OT>* tree_ptr) { tree_storage.Add(tree_ptr); }
+
+		/*
 		* Return true if a feature is redundant
 		*/
 		bool IsRedundantFeature(int feature) const { return redundant_features[feature]; }
 
+		/*
+		* Retrun true if a feature is flipped
+		*/
+		bool IsFeatureFlipped(int feature) const { return feature < flipped_features.size() && flipped_features[feature]; }
+
+        /*
+       * Creates the tree for the nth solution in the rashomon set
+       */
+        std::shared_ptr<Tree<OT>> CreateRashomonTreeN(std::shared_ptr<std::vector<std::shared_ptr<SolutionTracker>>>& solutions, std::vector<size_t>& cumulative_counts, size_t n);
+
+        /*
+		* Records Rashomon statistics in the result
+		*/
+        void PrepareRashomonStatistics(std::shared_ptr<SolverTaskResult<OT>>& result);
+        /*
+		* Creates trees with root feature f using the statistics
+		*/
+        std::vector<std::shared_ptr<Tree<OT>>> CalculateTreesWithRootFeature(SolverTaskResult<OT>* result, int feature);
+
+        /*
+		* Creates trees that contain feature f using the statistics
+		*/
+        std::vector<std::shared_ptr<Tree<OT>>> CalculateTreesWithFeature(SolverTaskResult<OT>* result, int feature);
+
+        /*
+		* Creates trees that do not contain feature f using the statistics
+		*/
+        std::vector<std::shared_ptr<Tree<OT>>> CalculateTreesWithoutFeature(SolverTaskResult<OT>* result, int feature);
+
+        /*
+		* Creates trees that with number of nodes equal to the node budget
+		*/
+        std::vector<std::shared_ptr<Tree<OT>>> CalculateTreesWithNodeBudget(SolverTaskResult<OT>* result, int node_budget);
+
+		/*
+		* Returns whether the incremental rashomon bound should be used. Namely if either
+		* The number of maximum trees is lower than INT32_MAX, the time limit is less than 10 minutes
+		* The Rashomon multiplier is larger than 0.5, or the Rashomon multiplier is not used
+		*/
+		bool UseIncrementalRashomonBound() const {
+			return parameters.GetIntegerParameter("max-num-trees") < INT32_MAX
+				|| parameters.GetFloatParameter("time") <= 600
+				|| parameters.GetFloatParameter("rashomon-multiplier") >= 0.5
+				|| !parameters.GetBooleanParameter("use-rashomon-multiplier");
+		}
+
+        /*
+         * Updates the statiscs regarding the solution lengths of each split tracker in a depth.
+         */
+        void AddToQueueStats(int depth, int feature, size_t sol_size) {
+            if (sol_size > 0) {
+                if (rashomon_sol_stats.size() <= depth) rashomon_sol_stats.resize(depth+1);
+                if (rashomon_sol_stats[depth].size() <= feature) rashomon_sol_stats[depth].resize(train_data.NumFeatures());
+                rashomon_sol_stats[depth][feature] = 
+                        std::make_pair(rashomon_sol_stats[depth][feature].first + sol_size,rashomon_sol_stats[depth][feature].second + 1);
+            }
+            return;
+        }
+
+        int sol_count = 0;
 	private:
 		OT* task{ nullptr };
 		Cache<OT>* cache{ nullptr };
-		
 		TerminalSolver_C<OT> terminal_solver1{ nullptr }, terminal_solver2{ nullptr };
+		RashTerminalSolver_C<OT> rashomon_terminal_solver1{ nullptr }, rashomon_terminal_solver2{ nullptr };
 		SimilarityLowerBound_C<OT> similarity_lower_bound_computer{ nullptr };
+		std::shared_ptr<AbstractTracker<OT>> root_tracker{ nullptr };
 		SolContainer global_UB;
 		std::vector<int> flipped_features;
 		std::vector<int> redundant_features;
-	};
+		PointerPool<Tree<OT>> tree_storage;
+		SolType rashomon_bound_delta, rashomon_bound;
+        std::vector<std::vector<std::pair<size_t,size_t>>> rashomon_sol_stats;
+
+        void PrintSolverParameters();
+    };
 }

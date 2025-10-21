@@ -2,7 +2,7 @@
 #include "tasks/optimization_task.h"
 #include "tasks/regression/ckmeans/Ckmeans.1d.dp.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	template <class OT>
 	struct PairWorstCount;
@@ -37,7 +37,6 @@ namespace STreeD {
 		using LabelType = double;						// The label type (in the input): Regression, so Real
 		using SolLabelType = double;					// The label type assigned to the leaf node, piecewise constant regression, so one Real number
 
-		static const bool total_order = true;				// The solution values are totally ordered
 		static const bool custom_leaf = true;				// A custom SolveLeafNode method is provided (to compute the mean of the data)
 		static const bool custom_lower_bound = true;		// A custom lower bound is provided (kmeans)
 		static const bool preprocess_data = true;			// The data is preprocessed (compute the y-squared values)
@@ -46,9 +45,10 @@ namespace STreeD {
 		static const bool element_branching_costs = false;	// no branching costs for each element
 		static const bool constant_branching_costs = true;  // The branching costs are constant (not depending on the size of the data)
 		static const bool custom_similarity_lb = true;		// A custom similarity lower bound is provided
-		static const bool use_weights = true;				// Set to true if you want to counts to be based on the weights of isntances
-		static constexpr  double worst = DBL_MAX;			// The worst possible solution value
-		static constexpr  double best = 0;					// The best possible solution value
+		static const bool use_weights = true;				// Set to true if you want to counts to be based on the weights of instances
+		static constexpr double worst = DBL_MAX;			// The worst possible solution value
+		static constexpr double best = 0;					// The best possible solution value
+		static constexpr bool leaf_penalty = true;          // whether to penalize leaves instead of branching nodes (adds a constant to the objective)
 
 		CostComplexRegression(const ParameterHandler& parameters)
 			: cost_complexity_parameter(parameters.GetFloatParameter("cost-complexity")),
@@ -70,12 +70,20 @@ namespace STreeD {
 		double Classify(const AInstance*, double label) const { return label; }
 		void GetInstanceLeafD2Costs(const AInstance* instance, int org_label, int label, D2CostComplexRegressionSol& costs, int multiplier) const;
 
-		double GetBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { return branching_cost; }
+		double GetBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { return GetBranchingCosts(context, feature); }
 		double GetTestBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { return 0; }
-		double GetBranchingCosts(const BranchContext& context, int feature) const { return branching_cost; }
+		double GetBranchingCosts(const BranchContext& context, int feature) const { 
+			if constexpr (leaf_penalty) {
+				int multiplier = 1;
+				if (context.GetBranch().Depth() == 0) multiplier = 2;
+				return branching_cost * multiplier;
+			} else {
+				return branching_cost;
+			}
+		}
 		double ComputeD2BranchingCosts(const double& d2costs, int count) const { return d2costs; }
 
-		void  ComputeD2Costs(const D2CostComplexRegressionSol& d2costs, int count, double& costs) const;
+		void  ComputeD2Costs(const D2CostComplexRegressionSol& d2costs, int count, double& costs, std::optional<BranchContext> context = std::nullopt) const;
 		inline bool IsD2ZeroCost(const D2CostComplexRegressionSol& d2costs) const { return d2costs.weight == 0; }
 		double GetLabel(const D2CostComplexRegressionSol& costs, int count) const;
 		//inline double GetWorstPerLabel(int label) const { return worst_distance_squared; }

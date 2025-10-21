@@ -1,8 +1,15 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
+
 #include "solver/solver.h"
 #include "utils/debug.h"
+#include "rashomon/branch_tracker.h"
 #include "utils/utils.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	/************************
 	*    SolverParameters   *
@@ -10,12 +17,9 @@ namespace STreeD {
 
 	SolverParameters::SolverParameters(const ParameterHandler& parameters) :
 		verbose(parameters.GetBooleanParameter("verbose")),
-		use_terminal_solver(parameters.GetBooleanParameter("use-terminal-solver")),
-		use_upper_bounding(parameters.GetBooleanParameter("use-upper-bound")),
-		use_lower_bounding(parameters.GetBooleanParameter("use-lower-bound")),
-		use_task_lower_bounding(parameters.GetBooleanParameter("use-task-lower-bound")),
-		similarity_lb(parameters.GetBooleanParameter("use-similarity-lower-bound")),
-		minimum_leaf_node_size(int(parameters.GetIntegerParameter("min-leaf-node-size"))) { }
+        rashomon_multiplier(parameters.GetFloatParameter("rashomon-multiplier")),
+		minimum_leaf_node_size(int(parameters.GetIntegerParameter("min-leaf-node-size"))),
+        ignore_trivial_extentions(parameters.GetBooleanParameter("ignore-trivial-extensions")){ }
 
 	/************************
 	*    AbstractSolver     *
@@ -66,48 +70,93 @@ namespace STreeD {
 	template<class OT>
 	Solver<OT>::~Solver() {
 		if (cache != nullptr) delete cache;
-		if constexpr (OT::use_terminal) {
-			if (terminal_solver1 != nullptr) delete terminal_solver1;
-			if (terminal_solver2 != nullptr) delete terminal_solver2;
-		}
-		if constexpr (OT::element_additive) {
-			if (similarity_lower_bound_computer != nullptr) delete similarity_lower_bound_computer;
-		}
+		if (terminal_solver1 != nullptr) delete terminal_solver1;
+		if (terminal_solver2 != nullptr) delete terminal_solver2;
+        if (rashomon_terminal_solver1 != nullptr) delete rashomon_terminal_solver1;
+        if (rashomon_terminal_solver2 != nullptr) delete rashomon_terminal_solver2;
+		if (similarity_lower_bound_computer != nullptr) delete similarity_lower_bound_computer;
 		if (task != nullptr) delete task;
 	}
 
+    template<class OT>
+    void Solver<OT>::PrintSolverParameters() {
+        auto p = solver_parameters;
+        std:: cout << "use_terminal_solver: " << p.use_terminal_solver << std::endl <<
+        " use_lower_bounding: " << p.use_lower_bounding << std::endl <<
+        " use_task_lower_bounding: "  << p.use_task_lower_bounding << std::endl <<
+        " subtract_ub: " << p.subtract_ub << std::endl <<
+        " use_upper_bounding: " << p.use_upper_bounding << std::endl <<
+        " similarity_lb: " << p.similarity_lb << std::endl <<
+        " cache_data_splits: " << p.cache_data_splits << std::endl <<
+        " use_lower_bound_early_stop: " << p.use_lower_bound_early_stop << std::endl <<
+        " minimum_leaf_node_size: " << p.minimum_leaf_node_size << std::endl <<
+        " UB_LB_max_size: " << p.UB_LB_max_size << std::endl <<
+        " rashomon_multiplier: " << p.rashomon_multiplier << std::endl <<
+        " ignore_trivial_extentions: " << p.ignore_trivial_extentions << std::endl;
+
+        std:: cout << "task: " << parameters.GetStringParameter("task") << std::endl <<
+        "max-depth: " << parameters.GetIntegerParameter("max-depth") << std::endl <<
+        "max-num-nodes: " << parameters.GetIntegerParameter("max-num-nodes") << std::endl <<
+        "max-num-features: " << parameters.GetIntegerParameter("max-num-features") << std::endl <<
+        "num-instances: " << parameters.GetIntegerParameter("num-instances") << std::endl <<
+        "train-test-split: " << parameters.GetFloatParameter("train-test-split") << std::endl <<
+        "stratify: " << parameters.GetBooleanParameter("stratify") << std::endl <<
+        "min-leaf-node-size: " << parameters.GetIntegerParameter("min-leaf-node-size") << std::endl <<
+        "feature-ordering: " << parameters.GetStringParameter("feature-ordering") << std::endl <<
+         "random-seed: " << parameters.GetIntegerParameter("random-seed") << std::endl <<
+         "use-branch-caching: " << parameters.GetBooleanParameter("use-branch-caching") << std::endl <<
+         "use-dataset-caching: " << parameters.GetBooleanParameter("use-dataset-caching") << std::endl <<
+         "duplicate-factor: " << parameters.GetIntegerParameter("duplicate-factor") << std::endl <<
+         "cost-complexity: " << parameters.GetFloatParameter("cost-complexity") << std::endl <<
+         "regression-bound: " << parameters.GetStringParameter("regression-bound") << std::endl <<
+         "use-rashomon-multiplier: " << parameters.GetBooleanParameter("use-rashomon-multiplier") << std::endl <<
+         "rashomon-multiplier: " << parameters.GetFloatParameter("rashomon-multiplier") << std::endl <<
+         "track-tree-statistics: " << parameters.GetBooleanParameter("track-tree-statistics") << std::endl <<
+         "max-num-trees: " << parameters.GetIntegerParameter("max-num-trees") << std::endl <<
+         "ignore-trivial-extensions: " << parameters.GetBooleanParameter("ignore-trivial-extensions") << std::endl;
+
+
+
+    }
+
 	template<class OT>
 	std::shared_ptr<SolverResult> Solver<OT>::Solve(const ADataView& _train_data) {
-		stopwatch.Initialise(parameters.GetFloatParameter("time"));
+
+        stopwatch.Initialise(parameters.GetFloatParameter("time"));
 		InitializeSolver(_train_data);
+
+        // PrintSolverParameters();
 
 		Solver<OT>::Context root_context;
 
 		// if no UB is given yet, compute the leaf solutions in the root node and use these as UB
 		auto result = InitializeSol<OT>();
+		rashomon_bound_delta = 0;
 		if (CheckEmptySol<OT>(global_UB)) {
 			global_UB = InitializeSol<OT>();
 			// If an upper bound is provided, and the objective is numeric, add it to the UB
-			if constexpr (std::is_same<Solver<OT>::SolType, double>::value || std::is_same<Solver<OT>::SolType, int>::value) {
-				double ub = parameters.GetFloatParameter("upper-bound");
-				// if INT32-MAX upper bound (default), but the solution value is a double, change the UB to DBL_MAX
-				if (std::abs(ub - INT32_MAX) < 1 && std::is_same<Solver<OT>::SolType, double>::value) {
-					ub = DBL_MAX;
-				}
-				AddSol<OT>(global_UB, Node<OT>(ub));
-			}
+//			if constexpr (std::is_same<Solver<OT>::SolType, double>::value || std::is_same<Solver<OT>::SolType, int>::value) {
+//				double ub = parameters.GetFloatParameter("upper-bound");
+//				// if INT32-MAX upper bound (default), but the solution value is a double, change the UB to DBL_MAX
+//				if (std::abs(ub - INT32_MAX) < 1 && std::is_same<Solver<OT>::SolType, double>::value) {
+//					ub = DBL_MAX;
+//				}
+//				AddSol<OT>(global_UB, Node<OT>(ub));
+//			}
 			result = SolveLeafNode(train_data, root_context, global_UB);
 		}
+		// Initialize the Rashomon bound delta
+		//rashomon_bound_delta = result.solution* solver_parameters.rashomon_multiplier;
 
 		// If all number of nodes options should be considered, set min_num_nodes to 1, else to max
 		int min_num_nodes = int(parameters.GetIntegerParameter("max-num-nodes"));
-		if (parameters.GetBooleanParameter("all-trees")) { min_num_nodes = 1; }
+//		if (parameters.GetBooleanParameter("all-trees")) { min_num_nodes = 1; }
 
 		int max_num_nodes = int(parameters.GetIntegerParameter("max-num-nodes"));
 		int max_depth = std::min(int(parameters.GetIntegerParameter("max-depth")), max_num_nodes);
 		int max_depth_searched = int(parameters.GetIntegerParameter("max-depth"));
 		max_depth_finished = 0;
-		if (min_num_nodes != max_num_nodes) {
+		if (min_num_nodes == 1) {
 			// For each number of nodes that should be considered, find the optimal solution
 			for (int num_nodes = min_num_nodes; num_nodes <= max_num_nodes; num_nodes++) {
 				if (!stopwatch.IsWithinTimeLimit()) { break; }
@@ -122,19 +171,14 @@ namespace STreeD {
 				max_depth_finished = int_log2(num_nodes + 1);
 				AddSols<OT>(task, 0, result, sol);
 				AddSols<OT>(global_UB, sol);
-				if constexpr (OT::total_order) {
-					if (result.IsFeasible()) {
-						global_UB.solution = global_UB.solution = result.solution - OT::minimum_difference;
+				//rashomon_bound_delta = result.solution* solver_parameters.rashomon_multiplier;
+				if (result.IsFeasible()) {
+					global_UB.solution = global_UB.solution = result.solution - OT::minimum_difference;
 					}
-				}
 				if (solver_parameters.verbose) {
 					progress_tracker.Done();
 					std::cout << " | " << std::setw(5) << stopwatch.TimeElapsedInSeconds() << " seconds ";
-					if constexpr (OT::total_order) {
-						std::cout << " Solution = " << std::setw(5) << OT::SolToString(result.solution) << std::endl;
-					} else {
-						std::cout << std::endl;
-					}
+					std::cout << " Solution = " << std::setw(5) << OT::SolToString(result.solution) << std::endl;
 				}
 				if (!stopwatch.IsWithinTimeLimit()) break;
 			}
@@ -152,56 +196,59 @@ namespace STreeD {
 				auto sol = SolveSubTree(train_data, root_context, global_UB, _max_depth, _num_nodes);
 				AddSols<OT>(task, 0, result, sol);
 				AddSols<OT>(global_UB, sol);
-				if constexpr (OT::total_order) {
-					if (result.IsFeasible()) {
-						global_UB.solution = std::min(global_UB.solution, result.solution - OT::minimum_difference);
-					}
+				//rashomon_bound_delta = result.solution* solver_parameters.rashomon_multiplier;
+				if (result.IsFeasible()) {
+					global_UB.solution = std::min(global_UB.solution, result.solution - OT::minimum_difference);
 				}
 				max_depth_searched = _max_depth;
 				max_depth_finished = _max_depth;
 				if (solver_parameters.verbose) {
 					progress_tracker.Done();
 					std::cout << " | " << std::setw(5) << stopwatch.TimeElapsedInSeconds() << " seconds ";
-					if constexpr (OT::total_order) {
-						std::cout << " Solution = " << std::setw(5) << OT::SolToString(result.solution) << std::endl;
-					} else {
-						std::cout << std::endl;
-					}
+					std::cout << " Solution = " << std::setw(5) << OT::SolToString(result.solution) << std::endl;
 				}
 				if (!stopwatch.IsWithinTimeLimit()) break;
 			}
 		}
+		//max_depth_finished = 0;
 		
 		// Evaluate the results
 		auto solver_result = std::make_shared<SolverTaskResult<OT>>();
 		solver_result->is_proven_optimal = stopwatch.IsWithinTimeLimit();
 		reconstructing = true;
-		if constexpr (OT::total_order) {
-			if (result.IsFeasible()) {
-				clock_t clock_start = clock();
-				int depth = int_log2(result.NumNodes() + 1);
-				for (; depth <= max_depth_searched && depth <= result.NumNodes(); depth++) {
-					if (cache->IsOptimalAssignmentCached(train_data, root_context.GetBranch(), depth, result.NumNodes())
-						&& cache->RetrieveOptimalAssignment(train_data, root_context.GetBranch(), depth, result.NumNodes()) == result) {
-						break;
-					}
+		
+		if (result.IsFeasible()) {
+			clock_t clock_start = clock();
+			int depth = int_log2(result.NumNodes() + 1);
+			for (; depth <= max_depth_searched && depth <= result.NumNodes(); depth++) {
+				if (cache->IsOptimalAssignmentCached(train_data, root_context.GetBranch(), depth, result.NumNodes())
+					&& cache->RetrieveOptimalAssignment(train_data, root_context.GetBranch(), depth, result.NumNodes()) == result) {
+					break;
 				}
-				depth = std::min(depth, max_depth_searched);
-				auto tree = ConstructOptimalTree(result, train_data, root_context, depth, result.NumNodes());
-				stats.time_reconstructing += double(clock() - clock_start) / CLOCKS_PER_SEC;
-				auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), train_data);
-				PostProcessTree(tree);
-				solver_result->AddSolution(tree, score);
 			}
-		} else {
-			for (auto& s : result->GetSolutions()) {
-				clock_t clock_start = clock();
-				auto tree = ConstructOptimalTree(s, train_data, root_context, max_depth_searched, int(parameters.GetIntegerParameter("max-num-nodes")));
-				stats.time_reconstructing += double(clock() - clock_start) / CLOCKS_PER_SEC;
-				auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), train_data);
-				PostProcessTree(tree);
-				solver_result->AddSolution(tree, score);
+			depth = std::min(depth, max_depth_searched);
+			auto tree = ConstructOptimalTree(result, train_data, root_context, depth, result.NumNodes());
+			stats.time_reconstructing += double(clock() - clock_start) / CLOCKS_PER_SEC;
+			auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), train_data);
+			PostProcessTree(tree);
+            solver_result->AddSolution(tree, score);
+            if (parameters.GetBooleanParameter("use-rashomon-multiplier")) {
+                rashomon_bound = (1 + solver_parameters.rashomon_multiplier) * result.solution;
+            } else {
+                auto temp_UB = InitializeSol<OT>();
+                auto leaf_solution = SolveLeafNode(train_data,root_context,temp_UB);
+                rashomon_bound = leaf_solution.solution;
+            }
+
+			if (solver_parameters.verbose) {
+				std::cout << "Optimal Solution: " << result.solution 
+					<< " \tRashomon bound : " << std::setprecision(int(std::log10(rashomon_bound)) + 5) << rashomon_bound
+					<< " \tTime: " << stopwatch.TimeElapsedInSeconds() << " seconds " << std::endl;
+				std::cout << "------------------------" << std::endl;
 			}
+            ConstructRashomonSet(solver_result);
+            solver_result->is_complete_enumaration = stopwatch.IsWithinTimeLimit();
+
 		}
 
 		stats.total_time += stopwatch.TimeElapsedInSeconds();
@@ -235,11 +282,27 @@ namespace STreeD {
 
 		// Reset the cache, data split cache, terminal solvers, sim-bound computer
 		ResetCache();
+		if (terminal_solver1 != nullptr) delete terminal_solver1;
+		if (terminal_solver2 != nullptr) delete terminal_solver2;
+		if (rashomon_terminal_solver1 != nullptr) delete rashomon_terminal_solver1;
+        if (rashomon_terminal_solver2 != nullptr) delete rashomon_terminal_solver2;
+		if (similarity_lower_bound_computer != nullptr) delete similarity_lower_bound_computer;
+		cache = new Cache<OT>(parameters, MAX_DEPTH, train_data.Size());
+		if (!solver_parameters.use_lower_bounding) cache->DisableLowerBoundCaching();
+
 		if constexpr (OT::use_terminal) {
-			if (terminal_solver1 != nullptr) delete terminal_solver1;
-			if (terminal_solver2 != nullptr) delete terminal_solver2;
 			terminal_solver1 = new TerminalSolver<OT>(this);
 			terminal_solver2 = new TerminalSolver<OT>(this);
+            rashomon_terminal_solver1 = new RashomonTerminalSolver<OT>(this);
+            rashomon_terminal_solver2 = new RashomonTerminalSolver<OT>(this);
+        }
+		// Only use the similarity lower bound computer if the optimization task is element-wise additive
+		if constexpr (OT::element_additive) {
+			similarity_lower_bound_computer = new SimilarityLowerBoundComputer<OT>(task,
+				NumLabels(), MAX_DEPTH, int(parameters.GetIntegerParameter("max-num-nodes")), train_data.Size());
+			if (!solver_parameters.similarity_lb) similarity_lower_bound_computer->Disable();
+		} else {
+			solver_parameters.similarity_lb = false;
 		}
 
 		// Disable data split cache, if so configured
@@ -248,6 +311,12 @@ namespace STreeD {
 
 		// Initialize the global UB with an empty solution
 		global_UB = InitializeSol<OT>();
+
+       if (!parameters.GetBooleanParameter("use-rashomon-multiplier")) {
+           solver_parameters.rashomon_multiplier = 3.0;
+       } else {
+           solver_parameters.rashomon_multiplier = parameters.GetFloatParameter("rashomon-multiplier");
+       }
 	}
 	
 	template <class OT>
@@ -268,11 +337,11 @@ namespace STreeD {
 	template <class OT>
 	void Solver<OT>::ResetCache() {
 		if (cache != nullptr) delete cache;
+		if (similarity_lower_bound_computer != nullptr) delete similarity_lower_bound_computer;
 		cache = new Cache<OT>(parameters, MAX_DEPTH, train_data.Size());
 		if (!solver_parameters.use_lower_bounding) cache->DisableLowerBoundCaching();
 		// Only use the similarity lower bound computer if the optimization task is element-wise additive
 		if constexpr (OT::element_additive) {
-			if (similarity_lower_bound_computer != nullptr) delete similarity_lower_bound_computer;
 			similarity_lower_bound_computer = new SimilarityLowerBoundComputer<OT>(task,
 				NumLabels(), MAX_DEPTH, int(parameters.GetIntegerParameter("max-num-nodes")), train_data.Size());
 			if (!solver_parameters.similarity_lb) similarity_lower_bound_computer->Disable();
@@ -289,8 +358,7 @@ namespace STreeD {
 	}
 
 	template <class OT>
-	typename Solver<OT>::SolContainer Solver<OT>::SolveSubTree(ADataView & data, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer UB_, int org_max_depth, int org_num_nodes) {
-		int max_depth = org_max_depth, num_nodes = org_num_nodes;
+	typename Solver<OT>::SolContainer Solver<OT>::SolveSubTree(ADataView & data, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer UB_, int max_depth, int num_nodes) {
 		runtime_assert(0 <= max_depth && max_depth <= num_nodes);
 		if (!stopwatch.IsWithinTimeLimit()) { return InitializeSol<OT>(); }
 
@@ -331,20 +399,19 @@ namespace STreeD {
 			auto lower_bound = InitializeLB<OT>();
 			ComputeLowerBound(data, context, lower_bound, max_depth, num_nodes, false);
 
-			if (solver_parameters.use_upper_bounding && LeftStrictDominatesRight<OT>(UB, lower_bound)) {
-				cache->UpdateMaxDepthSearched(data, branch, org_max_depth);
+			if (solver_parameters.use_upper_bounding && UBStrictDominatesRight<OT>(UB, lower_bound, rashomon_bound_delta)) {
 				return InitializeSol<OT>();
 			}
 
 			//Check lower-bound vs leaf node solution and return if same
 			auto empty_UB = InitializeSol<OT>();
 			leaf_solutions = SolveLeafNode(data, context, empty_UB);
-			if (LeftStrictDominatesRight<OT>(leaf_solutions, lower_bound)) {
-				cache->UpdateMaxDepthSearched(data, branch, org_max_depth);
-				return InitializeSol<OT>();
-			}
-			if (SolutionsEqual<OT>(lower_bound, leaf_solutions)) {
-				cache->StoreOptimalBranchAssignment(data, branch, leaf_solutions, org_max_depth, org_num_nodes);
+			if (UBStrictDominatesRight<OT>(leaf_solutions, leaf_solutions, rashomon_bound_delta)) {
+				if (!CheckEmptySol<OT>(leaf_solutions)) {
+					cache->StoreOptimalBranchAssignment(data, branch, leaf_solutions, max_depth, num_nodes);
+				} else {
+					cache->UpdateLowerBound(data, branch, UB, max_depth, num_nodes);
+				}
 				return leaf_solutions;
 			}
 
@@ -358,26 +425,15 @@ namespace STreeD {
 				int lower_num_nodes = std::min(num_nodes, 1 << (lower_max_depth)-1);
 				if (cache->IsOptimalAssignmentCached(data, branch, lower_max_depth, lower_num_nodes)) {
 					const auto cached_sols = cache->RetrieveOptimalAssignment(data, branch, lower_max_depth, lower_num_nodes);
-					if constexpr (OT::total_order) {
-						if (solver_parameters.use_upper_bounding && LeftStrictDominatesRight<OT>(UB, cached_sols)) break;
+					if (solver_parameters.use_upper_bounding && LeftStrictDominatesRight<OT>(UB, cached_sols)) break;
 						AddSols<OT>(task, current_depth, solutions, cached_sols);
 						AddSols<OT>(UB, cached_sols);
-					} else {
-						for (auto& sol : cached_sols->GetSolutions()) {
-							if (solver_parameters.use_upper_bounding && UB->StrictDominates(sol)) continue;
-							AddSol<OT>(task, current_depth, solutions, sol);
-							UpdateUB(context, UB, sol);
-						}
-					}
 					break;
 				}
 			}
 			auto branch_lb = InitializeLB<OT>();
 			ComputeLowerBound(data, context, branch_lb, max_depth, num_nodes, true);
-			if (!CheckEmptySol<OT>(solutions) && LeftDominatesRight<OT>(solutions, branch_lb)) {
-				cache->StoreOptimalBranchAssignment(data, branch, solutions, org_max_depth, org_num_nodes);
-				return solutions;
-			}
+			if (UBStrictDominatesRight<OT>(solutions, branch_lb, rashomon_bound_delta)) return solutions;
 		} else {
 			solutions = SolveLeafNode(data, context, UB);
 		}
@@ -385,7 +441,6 @@ namespace STreeD {
 		// Use the specialised algorithm for small trees
 		if constexpr (OT::use_terminal) {
 			if (IsTerminalNode(max_depth, num_nodes)) {
-				if (solver_parameters.use_upper_bounding) AddRootRelaxSols<OT>(task, branch, UB, leaf_solutions);
 				return SolveTerminalNode(data, context, UB, max_depth, num_nodes);
 			}
 		}
@@ -395,9 +450,38 @@ namespace STreeD {
 	}
 
 	template <class OT>
+	typename Solver<OT>::SolContainer Solver<OT>::SolveSubTreeIncrementalUB(ADataView& data, const Solver<OT>::Context& context, typename Solver<OT>::SolType UB, int max_depth, int num_nodes) {
+		auto _UB = InitializeSol<OT>();
+		
+		SolContainer tempUB = InitializeSol<OT>();
+		auto leaf_sol = SolveLeafNode(data, context, tempUB);
+		SolType branching_costs = GetBranchingCosts(data, context, 0);
+		SolType current_UB = UseIncrementalRashomonBound()
+			? std::min(UB + SOLUTION_PRECISION, double(leaf_sol.solution + branching_costs))
+			: UB + SOLUTION_PRECISION;
+		SolType UB_min_step = current_UB;
+
+		auto solution = InitializeSol<OT>();
+		while (current_UB < UB || CheckEmptySol<OT>(solution)) {
+			if (current_UB >= UB) _UB = InitializeSol<OT>();
+			else _UB.solution = current_UB;
+			solution = SolveSubTree(data, context, _UB, max_depth, num_nodes);
+			if (solution.solution <= _UB.solution && solution.solution <= UB) break;
+			
+			double delta = std::min(double(UB_min_step), double((UB + SOLUTION_PRECISION) - current_UB));
+			if (delta < 0.2 * UB) {
+				current_UB = (UB + SOLUTION_PRECISION);
+			} else {
+				current_UB += 0.5 * delta;
+			}
+		}
+		return solution;
+	}
+
+	template <class OT>
 	typename Solver<OT>::SolContainer Solver<OT>::SolveSubTreeGeneralCase(ADataView& data, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer& UB, typename Solver<OT>::SolContainer& solutions, int max_depth, int num_nodes) {
 		runtime_assert(max_depth <= num_nodes);
-		
+
 		const Branch& branch = context.GetBranch();
 		auto orgUB = CopySol<OT>(UB); // Copy the original UB and keep it, in case this branch is infeasible. The original UB can then be stored as LB
 		auto infeasible_lb = InitializeSol<OT>();
@@ -416,9 +500,6 @@ namespace STreeD {
 		} else if (parameters.GetStringParameter("feature-ordering") == "gini") {
 			runtime_assert(!(std::is_same<typename OT::LabelType, double>::value)); // Regression does not work with Gini
 			feature_selector = std::make_unique<FeatureSelectorGini>(data.NumFeatures());
-		} else if (parameters.GetStringParameter("feature-ordering") == "mse") {
-			runtime_assert((std::is_same<typename OT::LabelType, double>::value)); // MSE only works with Regression
-			feature_selector = std::make_unique<FeatureSelectorMSE>(data.NumFeatures());
 		}  else { std::cout << "Unknown feature ordering strategy!" << std::endl; exit(1); }
 		feature_selector->Initialize(data);
 
@@ -433,9 +514,9 @@ namespace STreeD {
 			if (!stopwatch.IsWithinTimeLimit()) break;
 			// if the current set of solutions equals the LB for this branch: break
 			if (solver_parameters.use_lower_bound_early_stop && solver_parameters.use_lower_bounding) {
-				if (SolutionsEqual<OT>(branch_lb, solutions)) break;
+				if (UBStrictDominatesRight<OT>(solutions, branch_lb, rashomon_bound_delta)) break;
 				if (solver_parameters.use_upper_bounding
-					&& LeftStrictDominatesRight<OT>(UB, branch_lb)) break;
+					&& UBStrictDominatesRight<OT>(UB, branch_lb, rashomon_bound_delta)) break;
 			}
 			int feature = feature_selector->PopNextFeature();
 			if (branch.HasBranchedOnFeature(feature) 
@@ -444,8 +525,8 @@ namespace STreeD {
 			auto branching_costs = GetBranchingCosts(data, context, feature);
 			// Break if the current UB is lower than the constant branching costs (if applicable)
 			if constexpr (Solver<OT>::sparse_objective) {
-				if (solver_parameters.use_upper_bounding 
-					&& UB.solution + DBL_DIFF < branching_costs) break;
+				if (solver_parameters.use_upper_bounding
+					&& UBStrictDominatesRight<OT>(UB.solution + DBL_DIFF, branching_costs, rashomon_bound_delta)) break;
 			}
 
 			// Split the data and skip if the split does not meet the minimum leaf node size requirements
@@ -482,11 +563,12 @@ namespace STreeD {
 				// Compute the left and right and combined LBs
 				ComputeLeftRightLowerBound(feature, context, branching_costs, lb, left_lower_bound, right_lower_bound,
 					*left_data_ptr, *left_context_ptr, left_depth, left_subtree_size, *right_data_ptr, *right_context_ptr, right_depth, right_subtree_size);
-				if (solver_parameters.use_upper_bounding && LeftStrictDominatesRight<OT>(UB, lb)) {
+				if (solver_parameters.use_upper_bounding && UBStrictDominatesRight<OT>(UB, lb, rashomon_bound_delta)) {
 					AddSols<OT>(infeasible_lb, lb);
 					continue;
 				}
-				if (solver_parameters.use_lower_bound_early_stop && SolutionsEqual<OT>(lb, solutions)) continue;
+
+				//if (solver_parameters.use_lower_bound_early_stop && SolutionsEqual<OT>(lb, solutions)) continue;
 				
 				// substract the right LB from the UB to get a UB for the left branch
 				auto leftUB = InitializeSol<OT>();
@@ -520,26 +602,23 @@ namespace STreeD {
 				}
 
 				// Combine left and right solutions and store the solution
-				if constexpr (!OT::total_order) {
-					if (swap_left_right) {
-						Merge(feature, context, UB, right_solutions, left_solutions, branching_costs, solutions);
-					} else {
-						Merge(feature, context, UB, left_solutions, right_solutions, branching_costs, solutions);
-					}
+				Node<OT> new_node;
+				if (swap_left_right) {
+					CombineSols(feature, right_solutions, left_solutions, branching_costs, new_node);
 				} else {
-					Node<OT> new_node;
-					if (swap_left_right) {
-						CombineSols(feature, right_solutions, left_solutions, branching_costs, new_node);
-					} else {
-						CombineSols(feature, left_solutions, right_solutions, branching_costs, new_node);
-					}
-					if (solver_parameters.use_upper_bounding && LeftStrictDominatesRightSol<OT>(UB, new_node)) {
-						AddSols<OT>(infeasible_lb, new_node);
-						continue;
-					}
-					if (LeftStrictDominatesRightSol<OT>(new_node, solutions)) solutions = new_node;
-					UpdateUB(context, UB, new_node);
+					CombineSols(feature, left_solutions, right_solutions, branching_costs, new_node);
 				}
+				if (solver_parameters.use_upper_bounding && UBStrictDominatesRight<OT>(UB, new_node, rashomon_bound_delta)) {
+					AddSols<OT>(infeasible_lb, new_node);
+					continue;
+				}
+				if (LeftStrictDominatesRightSol<OT>(new_node, solutions)) {
+					solutions = new_node;
+					//if (current_depth == 0 && new_node.solution * solver_parameters.rashomon_multiplier < rashomon_bound_delta) {
+					//	rashomon_bound_delta = new_node.solution* solver_parameters.rashomon_multiplier;
+					//}
+				}
+				UpdateUB(context, UB, new_node);
 
 			}
 
@@ -547,7 +626,6 @@ namespace STreeD {
 
 		// If a feasible solution is found (better than the UB), store it in the cache
 		// Or update the LB for this branch
-		SetSolSizeBudget<OT>(solutions, max_depth, num_nodes);
 		if (!CheckEmptySol<OT>(solutions)) {
 			cache->StoreOptimalBranchAssignment(data, branch, solutions, max_depth, num_nodes);
 		} else {
@@ -557,7 +635,6 @@ namespace STreeD {
 				AddSolsInv<OT>(infeasible_lb, orgUB);
 			}
 			cache->UpdateLowerBound(data, branch, infeasible_lb, max_depth, num_nodes);
-			cache->UpdateMaxDepthSearched(data, branch, max_depth);
 		}
 		if constexpr (OT::element_additive) {
 			similarity_lower_bound_computer->UpdateArchive(data, branch, max_depth);
@@ -587,7 +664,7 @@ namespace STreeD {
 		int diff1 = terminal_solver1->ProbeDifference(data);
 		int diff2 = terminal_solver2->ProbeDifference(data);
 		TerminalSolver<OT>* tsolver = diff1 < diff2 ? terminal_solver1 : terminal_solver2;
-		TerminalResults<OT>& results = tsolver->Solve(data, context, UB, num_nodes);
+		TerminalResults<OT>& results = tsolver->Solve(data, context, UB, rashomon_bound_delta, num_nodes);
 		stats.time_in_terminal_node += double(clock() - clock_start) / CLOCKS_PER_SEC;
 
 		// Store solutions in the cache for different node budgets
@@ -621,15 +698,55 @@ namespace STreeD {
 
 		// Return solutions based on node budget
 		if (num_nodes == 1) {
-			if (LeftStrictDominatesRight<OT>(UB, results.one_node_solutions)) return InitializeSol<OT>();
+			if (UBStrictDominatesRight<OT>(UB, results.one_node_solutions, rashomon_bound_delta)) return InitializeSol<OT>();
 			return CopySol<OT>(results.one_node_solutions);
 		} else if (num_nodes == 2) {
-			if (LeftStrictDominatesRight<OT>(UB, results.two_nodes_solutions)) return InitializeSol<OT>();
+			if (UBStrictDominatesRight<OT>(UB, results.two_nodes_solutions, rashomon_bound_delta)) return InitializeSol<OT>();
 			return CopySol<OT>(results.two_nodes_solutions);
 		}
-		if (LeftStrictDominatesRight<OT>(UB, results.three_nodes_solutions)) return InitializeSol<OT>();
+		if (UBStrictDominatesRight<OT>(UB, results.three_nodes_solutions, rashomon_bound_delta)) return InitializeSol<OT>();
 		return CopySol<OT>(results.three_nodes_solutions);
 	}
+
+    template <class OT>
+    std::pair<std::shared_ptr<std::vector<std::shared_ptr<typename Solver<OT>::SolutionTracker>>>,int> Solver<OT>::SolveRashomonTerminalNode(ADataView& data, const typename Solver<OT>::Context& context, typename Solver<OT>::SolContainer& UB, int max_depth, int num_nodes) {
+		if constexpr (OT::use_terminal) {
+			const Branch& branch = context.GetBranch();
+			runtime_assert(max_depth <= 2 && 1 <= num_nodes && num_nodes <= 3 && max_depth <= num_nodes);
+
+			stats.num_terminal_nodes_with_node_budget_one += (num_nodes == 1);
+			stats.num_terminal_nodes_with_node_budget_two += (num_nodes == 2);
+			stats.num_terminal_nodes_with_node_budget_three += (num_nodes == 3);
+
+			DebugBranch(branch);
+
+			// To maximize efficiency, use the terminal solver that already has computed frequency counts
+			// for a dataset that is most similar to the new dataset
+			clock_t clock_start = clock();
+			int diff1 = rashomon_terminal_solver1->ProbeDifference(data);
+			int diff2 = rashomon_terminal_solver2->ProbeDifference(data);
+			RashomonTerminalSolver<OT>* tsolver = diff1 < diff2 ? rashomon_terminal_solver1 : rashomon_terminal_solver2;
+			RashomonTerminalResults<OT>& results = tsolver->Solve(data, context, UB, num_nodes);
+			stats.time_rashomon_terminal += double(clock() - clock_start) / CLOCKS_PER_SEC;
+
+			if constexpr (OT::element_additive) {
+				similarity_lower_bound_computer->UpdateArchive(data, branch, max_depth);
+			}
+
+			// Return solutions based on node budget
+	//        if (num_nodes == 1) {
+	////            if (LeftStrictDominatesRight<OT>(UB, results.one_node_solutions)) return InitializeSol<OT>();
+	//            return CopySol<OT>(results.one_node_solutions)->GetSolutions();
+	//        } else if (num_nodes == 2) {
+	////            if (LeftStrictDominatesRight<OT>(UB, results.two_nodes_solutions)) return InitializeSol<OT>();
+	//            return CopySol<OT>(results.two_nodes_solutions)->GetSolutions();
+	//        }
+	//        if (LeftStrictDominatesRight<OT>(UB, results.three_nodes_solutions)) return InitializeSol<OT>();
+	//        return CopySol<OT>(results.solutions)->GetSolutions();
+			return std::make_pair(results.solutions, results.num_solutions);
+		}
+		throw std::runtime_error("Terminal solver not implemented for this optimization task.");
+    }
 
 	template<class OT>
 	typename Solver<OT>::SolContainer Solver<OT>::SolveLeafNode(const ADataView& data, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer& UB) const {
@@ -640,7 +757,7 @@ namespace STreeD {
 		if constexpr (OT::custom_leaf) {
 			// Return the optimal feasible solution, requires custom implementation
 			auto sol = task->SolveLeafNode(data, context);
-			if (solver_parameters.use_upper_bounding && LeftStrictDominatesRightSol<OT>(UB, sol)) return InitializeSol<OT>();
+			if (solver_parameters.use_upper_bounding && UBStrictDominatesRight<OT>(UB, sol, rashomon_bound_delta)) return InitializeSol<OT>();
 			UpdateUB(context, UB, sol);
 			return sol;
 		} else { // Otherwise, for each possible label, calculate the costs and store if better
@@ -649,7 +766,7 @@ namespace STreeD {
 			for (int label = 0; label < data.NumLabels(); label++) {
 				auto sol = Node<OT>(label, task->GetLeafCosts(data, context, label));
 				if (!SatisfiesConstraint(sol, context)) continue;
-				if (solver_parameters.use_upper_bounding && LeftStrictDominatesRightSol<OT>(UB, sol)) continue;
+				if (solver_parameters.use_upper_bounding && UBStrictDominatesRight<OT>(UB, sol, rashomon_bound_delta)) continue;
 				AddSol<OT>(task, branch.Depth(), result, sol);
 				UpdateUB(context, UB, sol);
 			}
@@ -661,7 +778,6 @@ namespace STreeD {
 	void Solver<OT>::ComputeLowerBound(ADataView& data, const typename Solver<OT>::Context& context, typename Solver<OT>::SolContainer& lb, int depth, int num_nodes, bool root_is_branching_node) {
 		lb = InitializeLB<OT>();
 		auto& branch = context.GetBranch();
-		int _max_depth_searched = cache->GetMaxDepthSearched(data, branch);
 		if (solver_parameters.use_lower_bounding) {
 			auto cached_lb = cache->RetrieveLowerBound(data, branch, depth, num_nodes);
 			AddSolsInv<OT>(lb, cached_lb);
@@ -680,7 +796,7 @@ namespace STreeD {
 				// This is similar to the hierarchical lower bound prestend by Lin et al., "Generalized and Scalable 
 				// Optimal Sparse Decision Trees," ICML-20.
 				auto branching_costs = GetBranchingCosts(data, context, 0); // Constant branching costs, so the feature does not matter
-				auto solutions = InitializeSol<OT>(false);
+			    auto solutions = InitializeSol<OT>(false);
 				if (!OT::expensive_leaf) {
 					auto ub = InitializeSol<OT>(false);
 					solutions = SolveLeafNode(data, context, ub);
@@ -688,39 +804,31 @@ namespace STreeD {
 				int current_depth = branch.Depth();
 				int max_depth_searched = 0;
 				for (int lower_max_depth = depth - 1; lower_max_depth > 0; lower_max_depth--) {
-					int lower_num_nodes = std::min(num_nodes, 1 << (lower_max_depth)-1);
+					int lower_num_nodes = std::min(num_nodes, (1 << (lower_max_depth))-1);
 					if (cache->IsOptimalAssignmentCached(data, branch, lower_max_depth, lower_num_nodes)) {
 						AddSols<OT>(task, current_depth, solutions, cache->RetrieveOptimalAssignment(data, branch, lower_max_depth, lower_num_nodes));
 						max_depth_searched = lower_max_depth;
 						break;
 					}
 				}
-				
-				if (root_is_branching_node && !reconstructing) { 
-					max_depth_searched = std::max(_max_depth_searched, std::max(max_depth_searched, max_depth_finished - current_depth));
-				}					
+				if (!reconstructing) {
+					max_depth_searched = std::max(max_depth_searched, max_depth_finished - current_depth);
+				}
 				int delta = reconstructing || !root_is_branching_node ? 0 : 1;
 				int min_nodes_to_use = max_depth_searched + delta;
-
-				if (solutions.solution <= min_nodes_to_use * branching_costs + custom_lb.solution) {
+				int min_nodes_to_use_extra = std::min(0, min_nodes_to_use - custom_lb.NumNodes());
+				
+				if (solutions.solution <= min_nodes_to_use_extra * branching_costs + custom_lb.solution) {
 					// The previous solution is cheaper than splitting on at least min_nodes_to_use, so its a LB
 					AddSolsInv<OT>(lb, solutions);
 				} else {
 					// The previous solution is worse than splitting on at least min_nodes_to_use, so use the minimum
 					// number of nodes as the lower bound.
-					Node<OT> split_lb(0, min_nodes_to_use * branching_costs + custom_lb.solution, solutions.num_nodes_left, solutions.num_nodes_right);
+					Node<OT> split_lb(0, min_nodes_to_use_extra * branching_costs + custom_lb.solution, solutions.num_nodes_left, solutions.num_nodes_right);
 					AddSolsInv<OT>(lb, split_lb);
 				}
-
-			} else {
-				AddSolsInv<OT>(lb, custom_lb);
 			}
 
-			if constexpr (OT::custom_lower_bound || Solver<OT>::sparse_objective) {
-				if (!SolutionsEqual<OT>(cached_lb, lb)) {
-					cache->UpdateLowerBound(data, branch, lb, depth, num_nodes);
-				}
-			}
 		}
 	}
 
@@ -739,179 +847,29 @@ namespace STreeD {
 			ComputeLowerBound(left_data, left_context, left_lower_bound, left_depth, left_nodes, false);
 			ComputeLowerBound(right_data, right_context, right_lower_bound, right_depth, right_nodes, false);
 			
-			if constexpr (OT::total_order) {
-				CombineSols(feature, left_lower_bound, right_lower_bound, branching_costs, lb);
-			} else {
-				LBMerge(feature, context, left_lower_bound, right_lower_bound, branching_costs, lb);
-			}
+			CombineSols(feature, left_lower_bound, right_lower_bound, branching_costs, lb);
 		}
 	}
 	
-	template<class OT>
-	template <bool reconstruct, typename U, typename std::enable_if<!U::total_order, int>::type>
-	void Solver<OT>::Merge(int feature, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer& UB,
-		typename Solver<OT>::SolContainer& left_sols, typename Solver<OT>::SolContainer& right_sols, const typename Solver<OT>::SolType& branching_costs, typename Solver<OT>::SolContainer& final_sols, TreeNode<U>* tree) {
-		runtime_assert(reconstruct != (tree == nullptr));
-		if (left_sols->Size() == 0 || right_sols->Size() == 0) return;
-		clock_t clock_start = clock();
-		const int current_depth = context.GetBranch().Depth();
-
-		// Compute new solutions by computing the product of left and right solutions
-		Node<OT> node;
-		for (auto& sol_left : left_sols->GetSolutions()) {
-			for (auto& sol_right : right_sols->GetSolutions()) {
-				if constexpr (reconstruct) {
-					if (CheckReconstructSolution<OT>(sol_left, sol_right, branching_costs, tree)) return;
-				} else {
-					CombineSols(feature, sol_left, sol_right, branching_costs, node);
-					if (!SatisfiesConstraint(node, context)) continue;
-					if (solver_parameters.use_upper_bounding && UB->StrictDominates(node)) continue;
-					AddSol<OT>(task, current_depth, final_sols, node);
-					UpdateUB(context, UB, node);
-				}
-			}
-		}
-
-		stats.time_merging += double(clock() - clock_start) / CLOCKS_PER_SEC;
-	}
-
-	template<class OT>
-	template <typename U, typename std::enable_if<!U::total_order, int>::type>
-	void Solver<OT>::LBMerge(int feature, const Solver<OT>::Context& context, typename Solver<OT>::SolContainer& left_sols, typename Solver<OT>::SolContainer& right_sols, const typename Solver<OT>::SolType& branching_costs, typename Solver<OT>::SolContainer& final_lb) {
-		if (left_sols->Size() == 0 || right_sols->Size() == 0) return;
-		clock_t clock_start = clock();
-		const Branch& branch = context.GetBranch();
-		const int current_depth = branch.Depth();
-		const size_t MAX_SIZE = solver_parameters.UB_LB_max_size;
-		Container<U> small_left_sols;
-		Container<U> small_right_sols;
-		Container<U>* left_sols_ptr = left_sols.get();
-		Container<U>* right_sols_ptr = right_sols.get();
-
-		// To prevent high computation time, reduce the left and right LB to at most MAX_SIZE items
-		if (left_sols->Size() > MAX_SIZE) {
-			small_left_sols.AddInvOrMerge(*(left_sols.get()), MAX_SIZE);
-			left_sols_ptr = &small_left_sols;
-		}
-		if (right_sols->Size() > MAX_SIZE) {
-			small_right_sols.AddInvOrMerge(*(right_sols.get()), MAX_SIZE);
-			right_sols_ptr = &small_right_sols;
-		}
-
-		// Combine left and right solutions and compute a new LB
-		Node<OT> node;
-		for (auto& sol_left : left_sols_ptr->GetSolutions()) {
-			for (auto& sol_right : right_sols_ptr->GetSolutions()) {
-				CombineSols(feature, sol_left, sol_right, branching_costs, node);
-				AddSol<OT>(final_lb, node);
-			}
-		}
-		stats.time_lb_merging += double(clock() - clock_start) / CLOCKS_PER_SEC;
-	}
 
 	template <class OT>
 	void Solver<OT>::SubtractUBs(const Solver<OT>::Context& context, const typename Solver<OT>::SolContainer& UB, const typename Solver<OT>::SolContainer& sols,
 			const typename Solver<OT>::SolContainer& current_solutions, const typename Solver<OT>::SolType& branching_costs, typename Solver<OT>::SolContainer& updatedUB) {
 		clock_t clock_start = clock();
 		const Branch& branch = context.GetBranch();
-		if constexpr (OT::total_order) {
-			if (solver_parameters.use_upper_bounding && solver_parameters.subtract_ub) {
-				// Subtract the solution and the branching costs
-				if (LeftDominatesRight<OT>(current_solutions.solution, UB.solution)) {
-					OT::Subtract(current_solutions.solution - OT::minimum_difference, sols.solution, updatedUB.solution);
-				} else {
-					OT::Subtract(UB.solution, sols.solution, updatedUB.solution);
-				}
-				OT::Subtract(updatedUB.solution, branching_costs, updatedUB.solution);
+		if (solver_parameters.use_upper_bounding && solver_parameters.subtract_ub) {
+			// Subtract the solution and the branching costs
+			if (LeftDominatesRight<OT>(current_solutions.solution, UB.solution)) {
+				OT::Subtract(current_solutions.solution - OT::minimum_difference, sols.solution, updatedUB.solution);
 			} else {
-				updatedUB.solution = UB.solution;
+				OT::Subtract(UB.solution, sols.solution, updatedUB.solution);
 			}
+			OT::Subtract(updatedUB.solution, branching_costs, updatedUB.solution);
 		} else {
-			const size_t MAX_SIZE = solver_parameters.UB_LB_max_size;
-			if (!solver_parameters.use_upper_bounding || !solver_parameters.subtract_ub || sols->Size() == 0) {
-				updatedUB = CopySol<OT>(UB);
-				if (solver_parameters.use_upper_bounding) {
-					// In the root nod of the search, feasible solutions can be relaxed by removing information that is related
-					// to constraint satisfaction from the solution
-					AddRootRelaxSols<OT>(task, branch, updatedUB, current_solutions);
-				}
-				return;
-			}
-			Node<OT> diffsol;
-
-			// Reduce size of UB
-			const Solver<OT>::SolContainer* UB_ptr = &UB;
-			Solver<OT>::SolContainer small_UB = InitializeSol<OT>();
-			if (UB->Size() >= MAX_SIZE) {
-				small_UB = InitializeSol<OT>();
-				small_UB->AddOrInvMerge(*(UB.get()), MAX_SIZE);
-				UB_ptr = &small_UB;
-			}
-
-			// Subtract branching costs
-			Solver<OT>::SolContainer branch_substract_UB = InitializeSol<OT>();
-			if (OT::has_branching_costs) {
-				for (size_t i = 0; i < (*UB_ptr)->Size(); i++) {
-					OT::Subtract((*UB_ptr)->GetSolutions()[i].solution, branching_costs, diffsol.solution);
-					branch_substract_UB->Add(diffsol);
-				}
-				UB_ptr = &branch_substract_UB;
-			}
-
-			// Reduce size of sols
-			const Solver<OT>::SolContainer* sols_ptr = &sols;
-			Solver<OT>::SolContainer small_sols = InitializeSol<OT>();
-			if (sols->Size() >= MAX_SIZE) {
-				small_sols->AddOrMerge(*(sols.get()), MAX_SIZE);
-				sols_ptr = &small_sols;
-			}
-
-			Solver<OT>::SolContainer corner_union = InitializeSol<OT>();
-			Solver<OT>::SolContainer sub_union = InitializeSol<OT>();
-			auto extreme_points = OT::ExtremePoints();
-			for (size_t j = 0; j < (*sols_ptr)->Size(); j++) {
-				Solver<OT>::SolContainer sub_ub = InitializeSol<OT>();
-				for (size_t i = 0; i < (*UB_ptr)->Size(); i++) {
-					OT::Subtract((*UB_ptr)->Get(i).solution, (*sols_ptr)->Get(j).solution, diffsol.solution);
-					//sub_ub->AddOrInvMerge(diffsol, MAX_SIZE);
-					sub_ub->Add(diffsol);
-				}
-				for (auto& ep : extreme_points) {
-					sub_ub->Add(Node<OT>(ep));
-				}
-
-				// Compute 'staircase corners'
-				Solver<OT>::SolContainer corners = InitializeSol<OT>();
-				for (size_t i = 0; i < sub_ub->Size(); i++) {
-					for (size_t k = i + 1; k < sub_ub->Size(); k++) {
-						OT::MergeInv(sub_ub->Get(i).solution, sub_ub->Get(k).solution, diffsol.solution);
-						//corners->AddOrInvMerge(diffsol, MAX_SIZE);
-						corners->Add(diffsol);
-					}
-				}
-				//corner_union->AddInvOrInvMerge(*(corners.get()), MAX_SIZE);
-				//sub_union->AddInvOrInvMerge(*(sub_ub.get()), MAX_SIZE);
-				
-				corner_union->AddInv(*(corners.get()));
-				sub_union->AddInv(*(sub_ub.get()));
-			}
-			// Compute 'staircase corners'
-			for (auto& ep : extreme_points) {
-				corner_union->Add(Node<OT>(ep));
-			}
-			for (size_t i = 0; i < corner_union->Size(); i++) {
-				for (size_t k = i + 1; k < corner_union->Size(); k++) {
-					OT::Merge(corner_union->Get(i).solution, corner_union->Get(k).solution, diffsol.solution);
-					updatedUB->AddInvOrInvMerge(diffsol, MAX_SIZE);
-				}
-			}
-			updatedUB->AddInvOrInvMerge(*(sub_union.get()), MAX_SIZE);
-			//updatedUB->AddOrInvMerge(*(UB_ptr->get()), MAX_SIZE);
-			
+			updatedUB.solution = UB.solution;
 		}
 		// In the root nod of the search, feasible solutions can be relaxed by removing information that is related
 		// to constraint satisfaction from the solution
-		AddRootRelaxSols<OT>(task, branch, updatedUB, current_solutions);
 		stats.time_ub_subtracting += double(clock() - clock_start) / CLOCKS_PER_SEC;
 	}
 
@@ -933,12 +891,24 @@ namespace STreeD {
 
 	template <class OT>
 	void Solver<OT>::ReduceNodeBudget(const ADataView& data, const Solver<OT>::Context& context, const typename Solver<OT>::SolContainer& UB, int& max_depth, int& num_nodes) const {
+		if (!solver_parameters.use_upper_bounding) return;
 		int nodes = num_nodes;
 		if constexpr (Solver<OT>::sparse_objective) {
 			if (UB.solution >= 0.9 * DBL_MAX) return;
+			double ub = double(UB.solution) + rashomon_bound_delta;
 			auto branching_costs = GetBranchingCosts(data, context, 0);
+
+			if constexpr(std::is_same<OT, CostComplexAccuracy>::value || std::is_same<OT, CostComplexRegression>::value) {
+				// Handle the special case for CostComplexAccuracy && CostComplexRegression which computes twice the
+				// branching costs for the root branch to account for costs per leaf (for comparison with TreeFarms)
+				if (OT::leaf_penalty && context.GetBranch().Depth() == 0) {
+					branching_costs /= 2;
+					ub -= branching_costs;
+				}
+			}
+
 			if (branching_costs <= 0) return;
-			nodes = int(std::max(0.0, std::min(double(nodes), (double(UB.solution) + 1e-6) / double(branching_costs))));
+			nodes = int(std::max(0.0, std::min(double(nodes), (ub + 1e-6) / double(branching_costs))));
 		}
 		if (data.Size() < solver_parameters.minimum_leaf_node_size * nodes) {
 			nodes = std::min(nodes, std::max((GetDataWeight(data) / solver_parameters.minimum_leaf_node_size) - 1, 0));
@@ -948,104 +918,15 @@ namespace STreeD {
 			if (new_max_depth < max_depth) {
 				max_depth = new_max_depth;
 				num_nodes = std::min(num_nodes, (1 << max_depth) - 1);
-				runtime_assert(max_depth <= num_nodes)
+				runtime_assert(max_depth <= num_nodes);
 			}
 		}
 	}
-
-	template <class OT>
-	std::shared_ptr<SolverResult> Solver<OT>::HyperSolve(const ADataView& _train_data) {
-		using ScoreType = std::shared_ptr<Score>;
-		runtime_assert(parameters.GetBooleanParameter("hyper-tune"));
-		stopwatch.Initialise(parameters.GetFloatParameter("time"));
-		InitializeSolver(_train_data);
-
-		bool verbose = parameters.GetBooleanParameter("verbose");
-		const int max_num_nodes = int(parameters.GetIntegerParameter("max-num-nodes"));
-
-		for (int tune_phase = 0; tune_phase < OT::num_tune_phases; tune_phase++) {
-			int best_config = -1;
-			double best_score;
-			auto tuning_config = OT::GetTuneRunConfiguration(parameters, train_data, tune_phase);
-
-			const int n_runs = tuning_config.GetNumberOfRuns();
-			const int n_configs = tuning_config.GetNumberOfConfigs();
-			const double validation_percentage = tuning_config.validation_percentage;
-
-			std::vector<std::vector<ScoreType>> performances(n_configs, std::vector<ScoreType>(n_runs));
-
-			std::vector<ADataView> sub_train_datas, sub_test_datas;
-			ADataView::KFoldSplit<typename OT::LabelType>(train_data, sub_train_datas, sub_test_datas, rng, n_runs, false);
-
-			for (int r = 0; r < n_runs; r++) {
-				int ix = 0;
-				Solver<OT> solver(parameters, rng);
-				solver.solver_parameters.verbose = false;
-				solver.redundant_features = redundant_features;
-				solver.task->CopyTaskInfoFrom(this->task);
-				//ADataView::TrainTestSplitData<typename OT::LabelType>(train_data, sub_train_data, sub_test_data, rng, validation_percentage, true);
-				ADataView& sub_train_data = sub_train_datas[r], &sub_test_data = sub_test_datas[r];
-				solver.InitializeSolver(sub_train_data); // Initialize with max-depth
-				solver.InitializeTest(sub_test_data);
-				auto worst = InternalTestScore<OT>::GetWorst(solver.task);
-				for (int c = 0; c < n_configs;c++) {
-					if (!stopwatch.IsWithinTimeLimit()) {
-						performances[c][r] = worst;
-						continue;
-					}
-					if (verbose) {
-						std::cout << "Tune phase " << (tune_phase + 1) << "/" << OT::num_tune_phases
-							<< " Split " << (r + 1) << "/" << n_runs
-							<< " Config " << (c + 1) << "/" << n_configs
-							<< " \t" << tuning_config.descriptors[c];
-					}
-					
-					bool reset = solver.parameters.GetIntegerParameter("max-depth") < tuning_config.parameters[c].GetIntegerParameter("max-depth");
-					solver.parameters = tuning_config.parameters[c];
-					solver.parameters.SetFloatParameter("time", stopwatch.TimeLeftInSeconds());
-					solver.InitializeSolver(sub_train_data, tuning_config.reset_solver || reset);
-					const auto result = solver.Solve(sub_train_data);
-					const auto test_result = solver.TestPerformance(result, sub_test_data);					
-					if (result->NumSolutions() == 0 || !result->IsProvenOptimal()) {
-						if (c > 0) performances[c][r] = performances[c - 1][r];
-						else performances[c][r] = worst;
-					} else {
-						performances[c][r] = test_result->scores[test_result->best_index];
-					}
-					if(verbose) std::cout << " \tScore: " << OT::ScoreToString(performances[c][r]->score) << std::endl;
-					if (tuning_config.skip_when_max_tree && result->GetBestNodeCount() == max_num_nodes && c + 1 < n_configs) {
-						if (verbose) std::cout << "Reached maximum tree. Skipping configuration " << (c + 2) << " to " << n_configs << std::endl;
-						for (c++; c < n_configs;c++) {
-							performances[c][r] = performances[c - 1][r];
-						}
-					}
-				}
-			}
-
-			for (int c = 0; c < n_configs; c++) {
-				auto avg_perf = InternalTestScore<OT>::GetAverage(performances[c]);
-				auto& score = avg_perf->score;
-				if (best_config == -1 || OT::CompareScore(score, best_score)) {
-					best_config = c;
-					best_score = score;
-				}
-			}
-
-			if (verbose) {
-				std::cout << std::endl << "Finished hyper parameter search (phase " << (tune_phase+1) << "/" << OT::num_tune_phases << "). Best config : " <<  tuning_config.descriptors[best_config] << std::endl << std::endl;
-			}
-			parameters = tuning_config.parameters[best_config];
-		}
-		stats.total_time += stopwatch.TimeElapsedInSeconds();
-		parameters.SetFloatParameter("time", stopwatch.TimeLeftInSeconds());
-		return Solve(train_data);
-	}
-
 
 	template<class OT>
 	std::shared_ptr<Tree<OT>> Solver<OT>::ConstructOptimalTree(const Node<OT>& sol, ADataView& data, const Solver<OT>::Context& context, int max_depth, int num_nodes) {
 		runtime_assert(num_nodes >= 0);
-		stopwatch.Disable();
+//		stopwatch.Disable();
 		max_depth = std::min(max_depth, num_nodes);
 		num_nodes = std::min(num_nodes, (1 << max_depth) - 1);
 
@@ -1108,7 +989,6 @@ namespace STreeD {
 					left_sols = cache->RetrieveOptimalAssignment(left_data, left_context.GetBranch(), left_depth, left_size);
 				if (!CheckEmptySol<OT>(left_sols)) break;
 			}
-			if constexpr (!OT::total_order) left_sols->FilterOnNumberOfNodes(min_left_subtree_size);
 
 			right_size = min_right_subtree_size;
 			for (; right_size <= max_size_subtree; right_size++) {
@@ -1119,7 +999,6 @@ namespace STreeD {
 					right_sols = cache->RetrieveOptimalAssignment(right_data, right_context.GetBranch(), right_depth, right_size);
 				if (!CheckEmptySol<OT>(right_sols)) break;
 			}
-			if constexpr (!OT::total_order) right_sols->FilterOnNumberOfNodes(min_right_subtree_size);
 
 		}
 		
@@ -1130,7 +1009,6 @@ namespace STreeD {
 				left_sols = SolveSubTree(left_data, left_context, UBleft, left_depth, left_subtree_size);
 			}
 			runtime_assert(!CheckEmptySol<OT>(left_sols));
-			if constexpr (!OT::total_order) left_sols->FilterOnNumberOfNodes(left_subtree_size);
 		}
 		if (!use_cache || CheckEmptySol<OT>(right_sols)) {
 			right_depth = std::min(max_depth - 1, right_subtree_size);
@@ -1139,33 +1017,316 @@ namespace STreeD {
 				right_sols = SolveSubTree(right_data, right_context, UBright, right_depth, right_subtree_size);
 			}
 			runtime_assert(!CheckEmptySol<OT>(right_sols));
-			if constexpr (!OT::total_order) right_sols->FilterOnNumberOfNodes(right_subtree_size);
 		}
 
 		// Reconstruct Merge
-		if constexpr (!OT::total_order) {
-			TreeNode<OT> tree_node;
-			tree_node.parent = sol;
-			auto branching_costs = GetBranchingCosts(data, context, sol.feature);
-			auto empty_final_sols = std::shared_ptr<Container<OT>>(nullptr);
-			Merge<true>(sol.feature, context, UB, left_sols, right_sols, branching_costs, empty_final_sols, &tree_node);
-
-			runtime_assert(tree_node.left_child.IsFeasible());
-			runtime_assert(tree_node.right_child.IsFeasible());
-
-			tree->left_child = ConstructOptimalTree(tree_node.left_child, left_data, left_context, left_depth, left_size);
-			tree->right_child = ConstructOptimalTree(tree_node.right_child, right_data, right_context, right_depth, right_size);
-
-
-		} else {
-			tree->left_child = ConstructOptimalTree(left_sols, left_data, left_context, left_depth, left_size);
-			tree->right_child = ConstructOptimalTree(right_sols, right_data, right_context, right_depth, right_size);
-		}		
+		tree->left_child = ConstructOptimalTree(left_sols, left_data, left_context, left_depth, left_size);
+		tree->right_child = ConstructOptimalTree(right_sols, right_data, right_context, right_depth, right_size);	
 		
 		return tree;
 	}
 
-	template <class OT>
+
+    template<class OT>
+    std::shared_ptr<Tree<OT>> Solver<OT>::ConstructD1Tree(ADataView data, int feature, Solver<OT>::Context context, ADataView& left_data, ADataView& right_data, Solver<OT>::Context& left_context, Solver<OT>::Context& right_context) {
+
+        auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature);
+        const Branch &branch = context.GetBranch();
+        data_splitter.Split(data, branch, feature, left_data, right_data);
+        if (!SatisfiesMinimumLeafNodeSize(left_data) || !SatisfiesMinimumLeafNodeSize(right_data)) {
+            return nullptr;
+        }
+        task->GetLeftContext(data, context, feature, left_context);
+        task->GetRightContext(data, context, feature, right_context);
+        Solver<OT>::SolContainer right_child_left_sols, right_child_right_sols;
+        return tree;
+    }
+    template<class OT>
+    void Solver<OT>::Generate2FeatureRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result, SolType threshold, ADataView& data, int max_depth, int max_num_nodes) {
+		if (max_depth == 0 || max_num_nodes < 3) return;
+        // Initialize empty UBs
+        auto rashomonUB = InitializeSol<OT>();
+		AddSol<OT>(rashomonUB, threshold);
+		auto UB = rashomonUB;
+		
+        Solver<OT>::Context base_context;
+		double branching_cost = GetBranchingCosts(data, base_context, 0) / 2; // Divide by two, because the root note gets twice the costs
+        Solver<OT>::SolContainer root_sol = SolveLeafNode(data, base_context, UB);
+        if (root_sol.solution <= threshold) {
+                auto tree = Tree<OT>::CreateLabelNode(root_sol.label);
+                auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                result->AddSolution(tree,score);
+        }
+
+
+        for (int feature1 = 0; feature1 < data.NumFeatures(); ++feature1){
+
+            Solver<OT>::Context context;
+            ADataView left_data, right_data;
+            Solver<OT>::Context left_context, right_context;
+            std::shared_ptr<Tree<OT>> root_node = ConstructD1Tree(data, feature1, context,left_data, right_data, left_context, right_context);
+            if (root_node == nullptr) continue;
+
+            Solver<OT>::SolContainer left_sols, right_sols;
+			UB = rashomonUB;
+            left_sols = SolveLeafNode(left_data, left_context, UB);
+			UB = rashomonUB;
+            right_sols = SolveLeafNode(right_data, right_context, UB);
+
+            // Construct tree with one branching node
+            if (!CheckEmptySol<OT>(left_sols) && !CheckEmptySol<OT>(right_sols)) {
+                auto error = (left_sols.solution + right_sols.solution);
+                if (error + 2 * branching_cost <= threshold) {
+                    auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature1);
+                    tree->left_child = Tree<OT>::CreateLabelNode(left_sols.label);
+                    tree->right_child = Tree<OT>::CreateLabelNode(right_sols.label);
+                    auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                    result->AddSolution(tree,score);
+                }
+            }
+            if (max_depth == 1) continue;
+            for (int feature2 = 0; feature2 < data.NumFeatures(); ++feature2) {
+
+                if (feature1 == feature2) continue;
+
+                ADataView left_child_left_data, left_child_right_data;
+                Solver<OT>::Context left_child_left_context, left_child_right_context;
+                Solver<OT>::SolContainer left_child_left_sols, left_child_right_sols;
+                auto tree_left = ConstructD1Tree(left_data, feature2, left_context,left_child_left_data, left_child_right_data, left_child_left_context, left_child_right_context);
+                if( tree_left != nullptr) {
+					UB = rashomonUB;
+                    left_child_left_sols = SolveLeafNode(left_child_left_data, left_child_left_context, UB);
+					UB = rashomonUB;
+                    left_child_right_sols = SolveLeafNode(left_child_right_data, left_child_right_context, UB);
+                }
+
+                ADataView right_child_left_data, right_child_right_data;
+                Solver<OT>::Context right_child_left_context, right_child_right_context;
+                Solver<OT>::SolContainer right_child_left_sols, right_child_right_sols;
+                auto tree_right = ConstructD1Tree(right_data, feature2, right_context,right_child_left_data, right_child_right_data, right_child_left_context, right_child_right_context);
+                if(tree_right != nullptr) {
+					UB = rashomonUB;
+                    right_child_left_sols = SolveLeafNode(right_child_left_data, right_child_left_context, UB);
+					UB = rashomonUB;
+                    right_child_right_sols = SolveLeafNode(right_child_right_data, right_child_right_context, UB);
+                }
+
+                // Construct tree with one parent branching node and one right branching node
+                if (!CheckEmptySol<OT>(left_sols) && !CheckEmptySol<OT>(right_child_left_sols) && !CheckEmptySol<OT>(right_child_right_sols)) {
+                    auto error = (left_sols.solution + right_child_left_sols.solution + right_child_right_sols.solution);
+                    if (error + 3 * branching_cost <= threshold) {
+                        tree_right->left_child = Tree<OT>::CreateLabelNode(right_child_left_sols.label);
+                        tree_right->right_child = Tree<OT>::CreateLabelNode(right_child_right_sols.label);
+                        auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature1);
+                        tree->left_child = Tree<OT>::CreateLabelNode(left_sols.label);
+                        tree->right_child = tree_right;
+                        auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                        result->AddSolution(tree,score);
+                    }
+                }
+                // Construct tree with one parent branching node and one left branching node
+                if (!CheckEmptySol<OT>(right_sols) && !CheckEmptySol<OT>(left_child_left_sols) && !CheckEmptySol<OT>(left_child_right_sols)) {
+                    auto error = (right_sols.solution + left_child_left_sols.solution + left_child_right_sols.solution);
+                    if (error + 3 * branching_cost <= threshold) {
+                        tree_left->left_child = Tree<OT>::CreateLabelNode(left_child_left_sols.label);
+                        tree_left->right_child = Tree<OT>::CreateLabelNode(left_child_right_sols.label);
+                        auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature1);
+                        tree->left_child = tree_left;
+                        tree->right_child = Tree<OT>::CreateLabelNode(right_sols.label);
+                        auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                        result->AddSolution(tree,score);
+                    }
+                }
+
+                if(tree_left == nullptr && tree_right == nullptr) continue;
+                if (max_num_nodes < 3) continue;
+                for (int feature3 = feature2; feature3 < data.NumFeatures(); ++feature3) {
+                    if (feature1 == feature3) continue;
+
+                    ADataView left_child_left_data2, left_child_right_data2;
+                    Solver<OT>::Context left_child_left_context2, left_child_right_context2;
+                    Solver<OT>::SolContainer left_child_left_sols2, left_child_right_sols2;
+                    std::shared_ptr<Tree<OT>> tree_left2;
+                    if (tree_right != nullptr){
+                        tree_left2 = ConstructD1Tree(left_data, feature3, left_context,left_child_left_data2, left_child_right_data2, left_child_left_context2, left_child_right_context2);
+                        if( tree_left2 != nullptr) {
+							UB = rashomonUB;
+                            left_child_left_sols2 = SolveLeafNode(left_child_left_data2, left_child_left_context2, UB);
+							UB = rashomonUB;
+                            left_child_right_sols2 = SolveLeafNode(left_child_right_data2, left_child_right_context2, UB);
+                        }
+                    }
+
+                    if (!CheckEmptySol<OT>(right_child_left_sols) && !CheckEmptySol<OT>(right_child_right_sols) && !CheckEmptySol<OT>(left_child_left_sols2) && !CheckEmptySol<OT>(left_child_right_sols2)) {
+                        auto error = (right_child_left_sols.solution + right_child_right_sols.solution + left_child_left_sols2.solution + left_child_right_sols2.solution);
+                        if (error + 4 * branching_cost <= threshold) {
+                            tree_left2->left_child = Tree<OT>::CreateLabelNode(left_child_left_sols2.label);
+                            tree_left2->right_child = Tree<OT>::CreateLabelNode(left_child_right_sols2.label);
+                            auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature1);
+                            tree->left_child = tree_left2;
+                            if (tree_right->left_child == nullptr) {
+                                tree_right->left_child = Tree<OT>::CreateLabelNode(right_child_left_sols.label);
+                                tree_right->right_child = Tree<OT>::CreateLabelNode(right_child_right_sols.label);
+                            }
+                            tree->right_child = tree_right;
+                            auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                            result->AddSolution(tree,score);
+                        }
+                    }
+
+                    if (feature2 == feature3) continue;
+                    ADataView right_child_left_data2, right_child_right_data2;
+                    Solver<OT>::Context right_child_left_context2, right_child_right_context2;
+                    Solver<OT>::SolContainer right_child_left_sols2, right_child_right_sols2;
+                    std::shared_ptr<Tree<OT>> tree_right2;
+                    if (tree_left != nullptr){
+                        tree_right2 = ConstructD1Tree(right_data, feature3, right_context,right_child_left_data2, right_child_right_data2, right_child_left_context2, right_child_right_context2);
+                        if(tree_right2 != nullptr) {
+							UB = rashomonUB;
+                            right_child_left_sols2 = SolveLeafNode(right_child_left_data2, right_child_left_context2, UB);
+							UB = rashomonUB;
+                            right_child_right_sols2 = SolveLeafNode(right_child_right_data2, right_child_right_context2, UB);
+                        }
+                    }
+
+
+                    if (!CheckEmptySol<OT>(right_child_left_sols2) && !CheckEmptySol<OT>(right_child_right_sols2) && !CheckEmptySol<OT>(left_child_left_sols) && !CheckEmptySol<OT>(left_child_right_sols)) {
+                        auto error = (right_child_left_sols2.solution + right_child_right_sols2.solution + left_child_left_sols.solution + left_child_right_sols.solution);
+                        if (error + 4 * branching_cost <= threshold) {
+                            tree_right2->left_child = Tree<OT>::CreateLabelNode(right_child_left_sols2.label);
+                            tree_right2->right_child = Tree<OT>::CreateLabelNode(right_child_right_sols2.label);
+                            auto tree = Tree<OT>::CreateFeatureNodeWithNullChildren(feature1);
+                            if (tree_left->left_child == nullptr) {
+                                tree_left->left_child = Tree<OT>::CreateLabelNode(left_child_left_sols.label);
+                                tree_left->right_child = Tree<OT>::CreateLabelNode(left_child_right_sols.label);
+                            }
+                            tree->left_child = tree_left;
+                            tree->right_child = tree_right2;
+                            auto score = InternalTrainScore<OT>::ComputeTrainPerformance(&data_splitter, task, tree.get(), data);
+                            result->AddSolution(tree,score);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    template<class OT>
+	void Solver<OT>::ConstructBruteForceRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result, const Node<OT>& sol, ADataView& data, int max_depth, int num_nodes) {
+		runtime_assert(num_nodes >= 0);
+		max_depth = std::min(max_depth, num_nodes);
+        auto threshold = sol.solution * (1 + solver_parameters.rashomon_multiplier);
+
+        Generate2FeatureRashomonSet(result,threshold, train_data, max_depth, num_nodes);
+
+        std::vector<std::string> tree_features;
+        for (auto tree : result->trees) {
+            tree_features.push_back(tree->SortedFeatures());
+        }
+        std::sort(tree_features.begin(), tree_features.end());
+
+        std::vector<int> tree_scores;
+        for (auto score : result->optimal_scores) {
+            tree_scores.push_back(score->score * data.Size());
+        }
+        std::sort(tree_scores.begin(), tree_scores.end());
+    }
+
+    template<class OT>
+	void Solver<OT>::ConstructRashomonSet(std::shared_ptr<SolverTaskResult<OT>>& result) {
+		clock_t clock_start = clock();
+		size_t start_solution_index = 0;
+		bool track_tree_statistics = parameters.GetBooleanParameter("track-tree-statistics");
+		int max_depth = int(parameters.GetIntegerParameter("max-depth"));
+
+		if (!root_tracker) {
+			
+			rashomon_bound_delta = 0;
+
+			int num_nodes = (1 << max_depth) - 1;
+			Solver<OT>::Context base_context;
+			root_tracker = AbstractTracker<OT>::CreateTracker(this, cache, train_data, base_context, max_depth, num_nodes, rashomon_bound);
+
+			if (track_tree_statistics) {
+				result->root_feature_stats.resize(train_data.NumFeatures(), 0);
+				result->feature_stats.resize(train_data.NumFeatures(), 0);
+				result->num_nodes_stats.resize(num_nodes + 1, 0);
+			}
+			result->rashomon_set_size = 0;
+			result->rashomon_solutions = std::make_shared<std::vector<std::shared_ptr<SolutionTracker>>>();
+			result->root_solution_counts.clear();
+
+			stats.time_rashomon_init = double(clock() - clock_start) / CLOCKS_PER_SEC;
+		} else {
+			if (!result) {
+				std::cout << "Result object is not initialized!" << std::endl;
+				std::exit(1);
+			} else if (!result->rashomon_solutions) {
+				std::cout << "Result Rashomon solution list is not initialized!" << std::endl;
+				std::exit(1);
+			}
+
+			// Continue where the last result left
+			start_solution_index = result->rashomon_solutions->size();
+
+			// Reinitialize the stopwatch
+			stopwatch.Initialise(parameters.GetFloatParameter("time"));
+		}
+
+		size_t max_num_trees = parameters.GetIntegerParameter("max-num-trees");
+		size_t solution_index = start_solution_index;
+		result->is_exhausted = true; // assume we exit because of exhausting the Rashomon set
+		while (root_tracker->HasNSolution(solution_index)) {
+			auto& sol = root_tracker->GetSolutionN(solution_index++);
+			if (sol->obj > rashomon_bound + SOLUTION_PRECISION) break;
+
+			result->rashomon_set_size += sol->GetNumSolutions();
+			if (result->rashomon_set_size >= max_num_trees || !stopwatch.IsWithinTimeLimit()) {
+				result->is_exhausted = false;
+				break;
+			}
+		}
+
+		if (solver_parameters.verbose) {
+			std::cout << "Number of solutions in the Rashomon set: " << result->rashomon_set_size << std::endl;
+			std::cout << "solver count: " << sol_count << std::endl; // TODO change to more meaningful print statement
+		}
+
+		// Copy the solutions from the root-tracker to the result object
+		auto& root_solutions = root_tracker->GetSolutions();
+		if (start_solution_index == 0) {
+			result->rashomon_solutions->assign(root_solutions.begin(), root_solutions.begin() + solution_index);
+		} else {
+			result->rashomon_solutions->insert(result->rashomon_solutions->end(), root_solutions.begin() + start_solution_index, root_solutions.begin() + solution_index);
+		}
+		// Compute the cumulative counts of solutions up to each solution-set
+		result->root_solution_counts.reserve(result->rashomon_solutions->size());
+		size_t cumulative_rashomon_size = 0;
+		for (auto& sol : *(result->rashomon_solutions)) {
+			cumulative_rashomon_size += sol->GetNumSolutions();
+			result->root_solution_counts.push_back(cumulative_rashomon_size - 1);
+		}
+		
+        stats.time_rashomon_total = (double(clock() - clock_start) / CLOCKS_PER_SEC);
+
+        result->num_active_split_tracker_per_depth.resize(max_depth);
+        result->num_average_solution_per_split_tracker.resize(max_depth);
+        for (size_t i = 0; i < rashomon_sol_stats.size(); ++i){
+            auto depth_stats = rashomon_sol_stats[i];
+            size_t sols_size = 0;
+            size_t total_count = 0;
+            for (auto& pair: depth_stats) {
+                if (pair.second > 0) result->num_active_split_tracker_per_depth[i] += pair.second;
+                sols_size += pair.first;
+                total_count += pair.second;
+            }
+            result->num_average_solution_per_split_tracker[i] = total_count != 0 ? sols_size / total_count : 0;
+        }
+
+        if (track_tree_statistics) PrepareRashomonStatistics(result);
+	}
+
+    template <class OT>
 	template <typename U, typename std::enable_if<U::element_additive, int>::type>
 	bool Solver<OT>::UpdateCacheUsingSimilarity(ADataView& data, const Branch& branch, int max_depth, int num_nodes) {
 		PairLowerBoundOptimal<OT> result = similarity_lower_bound_computer->ComputeLowerBound(data, branch, max_depth, num_nodes, cache);
@@ -1328,6 +1489,13 @@ namespace STreeD {
 		return solver_result;
 	}
 
+    template <class OT>
+    double Solver<OT>::RashomonTestPerformance(const Tree<OT>* tree, const ADataView& _test_data) {
+        InitializeTest(_test_data, false);
+        auto test_score = InternalTestScore<OT>::ComputeTestPerformance(&data_splitter, task, tree, flipped_features, test_data);
+        return test_score->score;
+    }
+
 	template <class OT>
 	std::vector<typename OT::LabelType> Solver<OT>::Predict(const std::shared_ptr<Tree<OT>>& tree, const ADataView& _test_data) {
 		InitializeTest(_test_data, false);
@@ -1337,21 +1505,120 @@ namespace STreeD {
 		return labels;
 	}
 
-	template class Solver<Accuracy>;
+    template<class OT>
+    std::shared_ptr<Tree<OT>> Solver<OT>::CreateRashomonTreeN(std::shared_ptr<std::vector<std::shared_ptr<typename Solver<OT>::SolutionTracker>>>& solutions, std::vector<size_t>& cumulative_counts, size_t n) {
+
+        auto it = std::lower_bound(cumulative_counts.begin(), cumulative_counts.end(), n);
+        size_t solution_index = std::distance(cumulative_counts.begin(), it);
+        auto solution = (*solutions)[solution_index];
+        if (solution_index != 0)  n -= cumulative_counts[solution_index-1] + 1;
+        return solution->CreateTreeWithIndexN(this, n);
+    }
+
+    template<class OT>
+    void Solver<OT>::PrepareRashomonStatistics(std::shared_ptr<SolverTaskResult<OT>>& result) {
+		auto& solutions = result->rashomon_solutions;
+		bool root_sol_exists = false;
+        for (auto &sol: *solutions) {
+            if (sol->GetFeature() != -1) {
+                result->root_feature_stats[sol->GetFeature()] += sol->GetNumSolutions();
+				if (!sol->IsRecursive()) {
+					++result->feature_stats[sol->GetFeature()];
+					++result->num_nodes_stats[1];
+				} else if (auto _sol = dynamic_cast<RecursiveSolutionTracker<OT>*>(sol.get())) {
+					std::transform(result->feature_stats.begin(), result->feature_stats.end(),
+						_sol->feature_count.begin(), result->feature_stats.begin(), std::plus<size_t>());
+					size_t size = 0;
+					for (int i = 0; i < _sol->num_nodes_count.size(); i++) {
+						result->num_nodes_stats[i] += _sol->num_nodes_count[i];
+						size += _sol->num_nodes_count[i];
+					}
+				}
+
+                
+            } else {
+                result->num_nodes_stats[0] += 1;
+            }
+        }
+    }
+
+    template<class OT>
+    std::vector<std::shared_ptr<Tree<OT>>> Solver<OT>::CalculateTreesWithRootFeature(SolverTaskResult<OT>* result, int feature) {
+        std::vector<std::shared_ptr<Tree<OT>>> trees;
+		size_t num_solutions = result->root_feature_stats[feature];
+        if (num_solutions == 0) return trees;
+
+        size_t count = 0;
+        for (size_t i = 0; i < result->rashomon_solutions->size(); ++i) {
+            auto sol = (*result->rashomon_solutions)[i];
+            if (sol->GetFeature() == feature) {
+                count += sol->GetNumSolutions();
+                for (size_t j = 0; j < sol->GetNumSolutions(); ++j) {
+                    auto tree = sol->CreateTreeWithIndexN(this, j);
+                    trees.push_back(tree);
+                }
+            }
+            if (num_solutions == count) break;
+        }
+        return trees;
+    }
+
+    template<class OT>
+    std::vector<std::shared_ptr<Tree<OT>>> Solver<OT>::CalculateTreesWithFeature(SolverTaskResult<OT>* result, int feature) {
+        std::vector<std::shared_ptr<Tree<OT>>> trees;
+        if (feature >= result->feature_stats.size()) return trees;
+        for (size_t i = 0; i < result->rashomon_solutions->size(); ++i) {
+            auto sol = (*result->rashomon_solutions)[i];
+            if (sol->GetFeature() == -1) continue;
+            if (sol->GetFeatureCount(feature) == 0) continue;
+            auto sol_trees = sol->CreateQueryTreesWithFeature(this, feature);
+            for (auto& tree : sol_trees) {
+                trees.push_back(tree);
+            }
+        }
+        return trees;
+    }
+
+    template<class OT>
+    std::vector<std::shared_ptr<Tree<OT>>> Solver<OT>::CalculateTreesWithoutFeature(SolverTaskResult<OT>* result, int feature) {
+        std::vector<std::shared_ptr<Tree<OT>>> trees;
+        if (feature >= result->feature_stats.size()) return trees;
+        for (size_t i = 0; i < result->rashomon_solutions->size(); ++i) {
+            auto sol = (*result->rashomon_solutions)[i];
+            if (sol->GetFeature() == -1) {
+                auto tree = sol->CreateTreeWithIndexN(this,0);
+                trees.push_back(tree);
+                continue;
+            }
+            if (sol->GetFeatureCount(feature) == sol->GetNumSolutions()) continue;
+            auto sol_trees = sol->CreateQueryTreesWithoutFeature(this, feature);
+            for (auto& tree : sol_trees) {
+                trees.push_back(tree);
+            }
+        }
+        return trees;
+    }
+
+    template<class OT>
+    std::vector<std::shared_ptr<Tree<OT>>> Solver<OT>::CalculateTreesWithNodeBudget(SolverTaskResult<OT>* result, int node_budget) {
+        std::vector<std::shared_ptr<Tree<OT>>> trees;
+        if (node_budget > result->num_nodes_stats.size()-1 || result->num_nodes_stats[node_budget] == 0) return trees;
+        for (size_t i = 0; i < result->rashomon_solutions->size(); ++i) {
+            auto sol = (*result->rashomon_solutions)[i];
+            if(node_budget == 0 && sol->GetFeature() == -1) {
+                trees.push_back(sol->CreateTreeWithIndexN(this, 0));
+                return trees;
+            }
+            if (sol->GetNodeCount(node_budget) == 0) continue;
+            auto sol_trees = sol->CreateNodeBudgetQueryTrees(this, node_budget);
+            for (auto& tree : sol_trees) {
+                trees.push_back(tree);
+            }
+        }
+        return trees;
+    }
+
 	template class Solver<CostComplexAccuracy>;
-	template class Solver<BalancedAccuracy>;
-
-	template class Solver<Regression>;
 	template class Solver<CostComplexRegression>;
-	template class Solver<PieceWiseLinearRegression>;
-	template class Solver<SimpleLinearRegression>;
-
-	template class Solver<CostSensitive>;
-	template class Solver<InstanceCostSensitive>;
-	template class Solver<F1Score>;
-	template class Solver<GroupFairness>;
-	template class Solver<EqOpp>;
-	template class Solver<PrescriptivePolicy>;
-	template class Solver<SurvivalAnalysis>;
 }
 

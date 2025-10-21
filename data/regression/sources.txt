@@ -1,0 +1,67 @@
+When reusing the datasets in this repository, please refer to the sources as mentioned below:
+
+Airfoil
+Brooks, T., Pope, D., & Marcolini, M. (1989). Airfoil Self-Noise [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5VW2C.
+https://archive.ics.uci.edu/dataset/291/airfoil+self+noise
+License: CC BY 4.0
+
+Air Quality
+Chambers, J. M. (2018). Graphical methods for data analysis. Chapman and Hall/CRC.
+
+
+Energy Efficiency (Cooling)
+Tsanas, A. & Xifara, A. (2012). Energy Efficiency [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C51307.
+https://archive.ics.uci.edu/dataset/242/energy+efficiency
+License: CC BY 4.0
+
+
+Energy Efficiency (Heating)
+Tsanas, A. & Xifara, A. (2012). Energy Efficiency [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C51307.
+https://archive.ics.uci.edu/dataset/242/energy+efficiency
+License: CC BY 4.0
+
+
+Household
+Hebrail, G. & Berard, A. (2006). Individual Household Electric Power Consumption [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C58K54.
+https://archive.ics.uci.edu/dataset/235/individual+household+electric+power+consumption
+License: CC BY 4.0
+
+
+Real-estate
+Yeh, I. (2018). Real Estate Valuation [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5J30W.
+https://archive.ics.uci.edu/dataset/477/real+estate+valuation+data+set
+License: CC BY 4.0
+
+
+Optical
+Akay, M. (2015). Optical Interconnection Network  [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5J60X.
+https://archive.ics.uci.edu/dataset/449/optical+interconnection+network
+License: CC BY 4.0
+
+
+Seoul Bike
+Seoul Bike Sharing Demand [Dataset]. (2020). UCI Machine Learning Repository. https://doi.org/10.24432/C5F62R.
+https://archive.ics.uci.edu/dataset/560/seoul+bike+sharing+demand
+License: CC BY 4.0
+
+
+Servo
+Ulrich, K. (1986). Servo [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5Q30F.
+https://archive.ics.uci.edu/dataset/87/servo
+License: CC BY 4.0
+
+
+Sync
+Synchronous Machine [Dataset]. (2021). UCI Machine Learning Repository. https://doi.org/10.24432/C5W32R.
+https://archive.ics.uci.edu/dataset/607/synchronous+machine+data+set
+License: CC BY 4.0
+
+
+Yacht
+Gerritsma, J., Onnink, R., & Versluis, A. (1981). Yacht Hydrodynamics [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5XG7R.
+https://archive.ics.uci.edu/dataset/243/yacht+hydrodynamics
+License: CC BY 4.0
+
+
+With thanks to the UCI Machine Learning repository
+Dua, D. and Graff, C. (2019). UCI Machine Learning Repository [http://archive.ics.uci.edu/ml]. Irvine, CA: University of California, School of Information and Computer Science.

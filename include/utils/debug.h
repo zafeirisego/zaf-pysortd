@@ -1,5 +1,11 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
+#include "model/branch.h"
 
 #ifndef DEBUG
 #define DEBUG false
@@ -7,7 +13,7 @@
 
 #define DEBUG_PRINT false
 
-namespace STreeD {
+namespace SORTD {
 
 	/* DEBUG functions */
 	void PrintIndent(int depth) {

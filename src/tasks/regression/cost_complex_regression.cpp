@@ -1,7 +1,12 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "tasks/regression/cost_complex_regression.h"
 #include "solver/similarity_lowerbound.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	double GetYSQ(const AInstance* instance) {
 		return static_cast<const Instance<double, RegExtraData>*>(instance)->GetExtraData().ysq;
@@ -191,6 +196,12 @@ namespace STreeD {
 		if (weight < minimum_leaf_node_size) return Node<CostComplexRegression>();
 		double label = y / weight;
 		double error = std::max(0.0, ysq - (y * y / weight));
+
+		if constexpr (leaf_penalty) {
+			if (context.GetBranch().Depth() == 0) {
+				error += branching_cost;
+			}
+		}
 		//runtime_assert(error >= -1e-6);
 		return Node<CostComplexRegression>(label, error);
 	}
@@ -206,7 +217,13 @@ namespace STreeD {
 			y += instance->GetLabel();
 			weight += w;
 		}
-		return std::max(0.0, ysq - 2 * label * y + weight * label * label);
+		double error = std::max(0.0, ysq - 2 * label * y + weight * label * label);
+		if constexpr (leaf_penalty) {
+			if (context.GetBranch().Depth() == 0) {
+				error += branching_cost;
+			}
+		}
+		return error;
 	}
 
 	double CostComplexRegression::GetTestLeafCosts(const ADataView& data, const BranchContext& context, double label) const {
@@ -220,13 +237,18 @@ namespace STreeD {
 		costs.weight = multiplier * int(instance->GetWeight());
 	}
 
-	void CostComplexRegression::ComputeD2Costs(const D2CostComplexRegressionSol& d2costs, int count, double& costs) const {
+	void CostComplexRegression::ComputeD2Costs(const D2CostComplexRegressionSol& d2costs, int count, double& costs, std::optional<BranchContext> context) const {
 		if (count == 0) {
 			costs = DBL_MAX;
 			return;
 		}
 		costs = d2costs.yys - (d2costs.ys * d2costs.ys / d2costs.weight); // MSE error
 		costs = costs < 0 ? 0.0 : costs;
+		if constexpr (leaf_penalty) {
+			if (context && context->GetBranch().Depth() == 0) {
+				costs += branching_cost;
+			}
+		}		
 	}
 
 	double CostComplexRegression::GetLabel(const D2CostComplexRegressionSol& costs, int count) const {
@@ -252,6 +274,8 @@ namespace STreeD {
 		}
 
 		lb.solution = 0;
+		lb.num_nodes_left = 0;
+		lb.num_nodes_right = 0;
 		
 		if (use_kmeans) {
 			weight_value_pairs.resize(data.Size());

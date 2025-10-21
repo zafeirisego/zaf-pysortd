@@ -5,7 +5,7 @@ https://bitbucket.org/EmirD/murtree
 #pragma once
 #include "base.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	class ParameterHandler {
 	public:
@@ -29,8 +29,8 @@ namespace STreeD {
 		//parameters are expected in the following form "-[parameter_name] [parameter_value]"
 		void ParseCommandLineArguments(int argc, char* argv[]);
 
-		void PrintParametersDifferentFromDefault(std::ostream& out = std::cout);
-		void PrintParameterValues(std::ostream& out = std::cout);
+		void PrintParametersDifferentFromDefault(std::ostream& out = std::cout) const;
+		void PrintParameterValues(std::ostream& out = std::cout) const;
 		void PrintHelpSummary(std::ostream& out = std::cout);
 
 		void CheckParameters() const;
@@ -43,10 +43,10 @@ namespace STreeD {
 		void CheckBooleanParameter(const std::string& parameter_name, bool value);
 		void CheckFloatParameter(const std::string& parameter_name, double value);
 
-		struct StringEntry { std::string name, short_description, default_value, current_value, category_name; std::vector<std::string> allowed_values; bool optional{ false }; };
+		struct StringEntry { std::string name, short_description, default_value, current_value, category_name; std::vector<std::string> allowed_values; bool optional{ false };};
 		struct IntegerEntry { std::string name, short_description, category_name; int64_t default_value, current_value, min_value, max_value; };
 		struct BooleanEntry { std::string name, short_description, category_name; bool default_value, current_value; };
-		struct FloatEntry { std::string name, short_description, category_name; double default_value, current_value, min_value, max_value; };
+		struct FloatEntry { std::string name, short_description, category_name; double default_value, current_value, min_value, max_value;};
 		struct PairNameType { std::string name, type; bool operator==(const std::string& param_name) { return this->name == param_name; }; };
 		struct Category { std::string name, short_description; std::vector<PairNameType> parameters; bool operator==(const std::string& category_name) { return this->name == category_name; } };
 

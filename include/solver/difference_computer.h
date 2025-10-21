@@ -1,13 +1,15 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 
 #pragma once
 
 #include "model/data.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	struct DifferenceMetrics {
 		DifferenceMetrics(int num_labels) :num_removals(num_labels, 0), total_difference(0) {}

@@ -1,13 +1,15 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "base.h"
 #include "model/node.h"
 #include "solver/data_splitter.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	template <class OT>
 	struct InternalTrainScore;
@@ -65,10 +67,15 @@ namespace STreeD {
 			return 1 + std::max(left_child->Depth(), right_child->Depth());
 		}
 
-		int NumNodes() const {
+		int NumBranchingNodes() const {
 			if (IsLabelNode()) { return 0; }
-			return 1 + left_child->NumNodes() + right_child->NumNodes();
+			return 1 + left_child->NumBranchingNodes() + right_child->NumBranchingNodes();
 		}
+
+        int NumLeafNodes() const {
+            if (IsLabelNode()) { return 1; }
+            return left_child->NumLeafNodes() + right_child->NumLeafNodes();
+        }
 
 		bool IsLabelNode() const { return label != OT::worst_label; }
 		bool IsFeatureNode() const { return feature != INT32_MAX; }
@@ -131,7 +138,7 @@ namespace STreeD {
 				task->GetRightContext(data, context, feature, right_context);
 				ADataView left_data, right_data;
 				data_splitter->Split(data, context.GetBranch(), feature, left_data, right_data, true);
-				if (flipped_features[feature] == 1) {
+                if (flipped_features.size() > feature && flipped_features[feature] == 1) {
 					right_child->Classify(data_splitter, task, left_context, flipped_features, left_data, labels);
 					left_child->Classify(data_splitter, task, right_context, flipped_features, right_data, labels);
 				} else {
@@ -159,12 +166,51 @@ namespace STreeD {
 			}
 		}
 
+
+        std::string SortedFeatures() const {
+            std::vector<int> features;
+            FindSortedFeatures(features);
+            std::sort(features.begin(), features.end());
+            std::stringstream ss;
+            ss << "[";
+            for (int i = 0; i < features.size(); ++i){
+                ss << features[i];
+                if (i != features.size() -1) ss << ",";
+            }
+            ss << "]";
+            return ss.str();
+        }
+
+        void FindSortedFeatures(std::vector<int>& features) const {
+            if (IsLabelNode()) {
+                return;
+            } else {
+                features.push_back(feature);
+                left_child->FindSortedFeatures(features);
+                right_child->FindSortedFeatures(features);
+            }
+        }
+
 		void FlipFlippedFeatures(const std::vector<int>& flipped_features) {
 			if (feature >= flipped_features.size()) return; // In a leaf node, or when hypertuning
 			if (flipped_features[feature]) std::swap(left_child, right_child);
 			left_child->FlipFlippedFeatures(flipped_features);
 			right_child->FlipFlippedFeatures(flipped_features);
 		}
+
+        bool IsRecursivelyEqual(std::shared_ptr<Tree<OT>> tree) {
+            if (IsLabelNode()) {
+                if(tree->IsLabelNode() && label == tree->label) return true;
+            }
+            else if (feature == tree->feature) {
+                if (Depth() == tree->Depth() && NumBranchingNodes() == tree->NumNodes()) {
+                    if (left_child->IsRecursivelyEqual(tree->left_child) && right_child->IsRecursivelyEqual(tree->right_child)) {
+                        return true;
+                    }
+                }
+            }
+			return false;
+        }
 
 		int feature{ INT32_MAX };
 		typename OT::SolLabelType label{ OT::worst_label };

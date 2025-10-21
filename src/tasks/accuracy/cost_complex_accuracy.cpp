@@ -1,6 +1,11 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "tasks/accuracy/cost_complex_accuracy.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	void CostComplexAccuracy::PreprocessData(AData& data, bool train) {
 		std::vector<AInstance*>& instances = data.GetInstances();
@@ -45,8 +50,22 @@ namespace STreeD {
 			if (k == label) continue;
 			error += data.NumInstancesForLabel(k);
 		}
+		if constexpr (leaf_penalty) {
+			if (context.GetBranch().Depth() == 0) {
+				return error + cost_complexity_parameter * train_summary.size;
+			}
+		}
 		return error;
 	}
+
+    int CostComplexAccuracy::GetTestLeafCosts(const ADataView& data, const BranchContext& context, int label) const {
+        double error = 0;
+        for (int k = 0; k < data.NumLabels(); k++) {
+            if (k == label) continue;
+            error += data.NumInstancesForLabel(k);
+        }
+        return error;
+    }
 
 	Node<CostComplexAccuracy> CostComplexAccuracy::ComputeLowerBound(const ADataView& data, const Branch& branch, int max_depth, int num_nodes) {
 		// Equivalent Points Bound adapted from Angelino, E., Larus-Stone, N., Alabi, D., Seltzer, M., & Rudin, C. (2018). 
@@ -59,6 +78,8 @@ namespace STreeD {
 		}
 	
 		lb.solution = 0;
+		lb.num_nodes_left = 0;
+		lb.num_nodes_right = 0;
 
 		const int num_labels = data.NumLabels();
 
@@ -165,7 +186,6 @@ namespace STreeD {
 			alphas.push_back(base_alpha * a);
 		for(double alpha = 100*base_alpha; alpha < 0.01; alpha += 0.001)
 			alphas.push_back(alpha);
-		std::sort(alphas.begin(), alphas.end(), std::greater<>());
 		for (auto a: alphas) {
 			if (a > 0.1) continue;
 			ParameterHandler params = default_config;

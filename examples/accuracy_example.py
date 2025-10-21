@@ -1,15 +1,17 @@
-from pystreed import STreeDClassifier
+from pysortd import SORTDClassifier
 import pandas as pd
 
-# Read data
+df = pd.read_csv('data/accuracy/monk2.csv',delimiter=" ", header=None)
+X, y = df.iloc[:, 1:], df.iloc[:, 0]
 
-df = pd.read_csv("data/classification/anneal.csv", sep=" ", header=None)
-X = df[df.columns[1:]].values
-y = df[0].values
-
-# Fit the model
-model = STreeDClassifier(max_depth = 3, max_num_nodes=5, time_limit=100, verbose=True)
+model = SORTDClassifier("cost-complex-accuracy",max_depth = 3, cost_complexity=0.01, verbose=True,
+                        use_rashomon_multiplier=True,rashomon_multiplier=0.1, max_num_trees=1000)
 model.fit(X,y)
+rashomon_set_size = model.rashomon_set_size
+solutions = model.get_solution_list()
 
-# Evaluate the model
-print(f"Train Accuracy Score: {model.score(X, y) * 100}%")
+solution_values = []
+for solution in solutions:
+    values = [solution.objective / len(X) for d in range(solution.num_solutions)]
+    solution_values.extend(values)
+pass

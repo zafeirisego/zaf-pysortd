@@ -1,5 +1,11 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "base.h"
+#include <optional>
 #include "utils/parameter_handler.h"
 #include "model/data.h"
 #include "model/branch.h"
@@ -7,7 +13,7 @@
 #include "model/container.h"
 #include "solver/tuning.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	// An empty context class
 	class EmptyContext {
@@ -17,6 +23,7 @@ namespace STreeD {
 	// The default branch context class
 	class BranchContext {
 	public:
+        BranchContext() {}
 		Branch& GetMutableBranch() { return branch; }
 		const Branch& GetBranch() const { return branch; }
 	private:
@@ -35,7 +42,7 @@ namespace STreeD {
 		static const bool use_terminal = true;			// True iff this OT uses the terminal solver
 		static const bool element_additive = true;		// True iff this OT is element-additive, for using the similarity lower bound
 		static const bool has_constraint = false;		// True iff this OT has constraints
-		static const bool terminal_filter = false;		// True if you want to filter infeasible and UB dominated solutions in the terminal
+		static const bool terminal_filter = true;		// True if you want to filter infeasible and UB dominated solutions in the terminal
 		static const bool terminal_zero_costs_true_label = true; // True iff the costs of assigning the true label in the terminal is zero
 		static const bool has_branching_costs = false;	// True iff this OT has branching costs
 		static const bool constant_branching_costs = false; // True iff the branching costs are constant
@@ -50,7 +57,6 @@ namespace STreeD {
 		static const bool custom_get_label = false;			// Set to true if you want to compute the label customly, rather than using max. cost
 		static const bool use_weights = false;				// Set to true if you want to counts to be based on the weights of isntances
 		static constexpr int worst_label = INT32_MAX;		// Defines the default label, when no label is given.
-		static constexpr int num_tune_phases = 1;			// Number of tuning phases in hypertuning
 		static constexpr int minimum_difference = 0;		// The minimum difference between two solutions
 
 

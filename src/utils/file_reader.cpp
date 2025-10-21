@@ -1,11 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "utils/file_reader.h"
 #include "tasks/tasks.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	template <class OT>
 	void CopyTrainData(AData& data, ADataView& train_data, ADataView& test_data) {
@@ -104,7 +106,7 @@ namespace STreeD {
 			} else {
 				indices.resize(available_instances);
 				std::iota(indices.begin(), indices.end(), 0);
-				std::shuffle(indices.begin(), indices.end(), std::random_device()); // TODO use the same random device
+				//std::shuffle(indices.begin(), indices.end(), std::random_device());
 				indices.resize(num_instances);
 				std::sort(indices.begin(), indices.end());
 			}
@@ -158,21 +160,6 @@ namespace STreeD {
 	}
 
 
-	template void FileReader::ReadData<Accuracy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
 	template void FileReader::ReadData<CostComplexAccuracy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<BalancedAccuracy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-
-	template void FileReader::ReadData<Regression>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
 	template void FileReader::ReadData<CostComplexRegression>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<PieceWiseLinearRegression>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<SimpleLinearRegression>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-
-	template void FileReader::ReadData<CostSensitive>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<InstanceCostSensitive>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<F1Score>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<GroupFairness>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<EqOpp>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<PrescriptivePolicy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-	template void FileReader::ReadData<SurvivalAnalysis>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
-
 }

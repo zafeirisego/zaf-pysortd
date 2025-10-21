@@ -1,3 +1,7 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
 #pragma warning( disable: 26451 )
 #pragma once
 #include "base.h"
@@ -5,7 +9,7 @@
 #include <functional>
 #include "utils/dynamic_bitset.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	// Extra data class for optimization tasks that have more data than only a label and feature data
 	class ExtraData {
@@ -184,10 +188,13 @@ namespace STreeD {
 		ADataView(const AData* data, int num_labels) : data(data), size(0) { instances.resize(num_labels); instance_weights.resize(num_labels); }
 		ADataView(const AData* data, const std::vector<std::vector<const AInstance*>>& instances, const std::vector<std::vector<double>>& instance_weights = {});
 		
+		inline const std::vector<std::vector<const AInstance*>>& GetInstances() const { return instances; }
 		inline const std::vector<const AInstance*>& GetInstancesForLabel(int label) const { return instances[label];  }
 		inline std::vector<const AInstance*>& GetMutableInstancesForLabel(int label)  { return instances[label]; }
 		inline std::vector<std::vector<const AInstance*>>& GetMutableInstances() { return instances; }
 		inline int NumInstancesForLabel(int label) const { return int(instances[label].size()); }
+		int NumInstancesForFeature(int feature) const;
+		int NumInstancesForLabelAndFeature(int label, int feature) const;
 		inline AInstance* GetMutableInstance(int label, int ix) const { return data->GetMutableInstance(instances[label][ix]->GetID()); }
 		inline int NumLabels() const { return int(instances.size()); }
 		inline int NumFeatures() const { return data->NumFeatures(); }
@@ -206,7 +213,12 @@ namespace STreeD {
 		inline void  SetHash(long long hash) { bitset_view.SetHash(hash); }
 
 		inline void Initialize(const AData* data, int num_labels);
-		inline void Clear() { instances.clear(); instance_weights.clear(); size = 0; bitset_view = ADataViewBitSet(); }
+		inline void Clear() { 
+			instances = std::vector<std::vector<const AInstance*>>();
+			instance_weights.clear(); 
+			size = 0; 
+			bitset_view = ADataViewBitSet();
+		}
 		void ResetReserve(const ADataView& other);
 
 		// Split the data on feature
@@ -250,11 +262,11 @@ namespace STreeD {
 namespace std {
 
 	template <>
-	struct hash<STreeD::ADataViewBitSet> {
+	struct hash<SORTD::ADataViewBitSet> {
 
-		size_t operator()(const STreeD::ADataViewBitSet& view) const {
+		size_t operator()(const SORTD::ADataViewBitSet& view) const {
 			if (view.IsHashSet()) return view.GetHash();
-			return hash<STreeD::DynamicBitSet>()(view.bitset);
+			return hash<SORTD::DynamicBitSet>()(view.bitset);
 		}
 
 	};

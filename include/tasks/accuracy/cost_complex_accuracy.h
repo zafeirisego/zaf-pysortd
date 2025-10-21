@@ -1,7 +1,12 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+*/
+
 #pragma once
 #include "tasks/optimization_task.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	struct CCAccExtraData {
 		int unique_feature_vector_id{ 0 };
@@ -17,18 +22,19 @@ namespace STreeD {
 		using BranchSolD2Type = double;		// The data type of the branching costs in the terminal solver
 		using TestSolType = int;
 
-		static const bool total_order = true;
 		static const bool custom_leaf = false;
 		static const bool element_additive = true;
 		static const bool has_branching_costs = true;
 		static const bool element_branching_costs = false;
 		static const bool constant_branching_costs = true;
+		static const bool terminal_filter = true;
 		static const bool custom_lower_bound = true;		// A custom lower bound is provided (equiv-points)
 		static const bool combine_custom_lb_purification = true; // the equiv. points bound can be combined with the purification bound
 		static const bool preprocess_data = true;			// The data is preprocessed (set ids based on features sorting)
 		static const bool preprocess_train_test_data = true;// The training data is preprocessed (sort on features)
 		static constexpr int worst = INT32_MAX;
-		static constexpr int best = 0;
+		static constexpr double best = 0;
+		static constexpr bool leaf_penalty = true;          // whether to penalize leaves instead of branching nodes (adds a constant to the objective)
 
 		CostComplexAccuracy(const ParameterHandler& parameters) 
 			: Classification(parameters), 
@@ -41,18 +47,46 @@ namespace STreeD {
 		}
 
 		double GetLeafCosts(const ADataView& data, const BranchContext& context, int label) const;
-		inline int GetTestLeafCosts(const ADataView& data, const BranchContext& context, int label) const {
-			return int(GetLeafCosts(data, context, label));
-		}
+		int GetTestLeafCosts(const ADataView& data, const BranchContext& context, int label) const;
 
-		double GetBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { return cost_complexity_parameter * train_summary.size; }
-		int GetTestBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { return 0; }
-		double GetBranchingCosts(const BranchContext& context, int feature) const { return cost_complexity_parameter * train_summary.size; }
+		double GetBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const { 
+			if constexpr (leaf_penalty) {
+				int multiplier = 1;
+				if (context.GetBranch().Depth() == 0) multiplier = 2;
+				return cost_complexity_parameter * train_summary.size * multiplier;
+			} else {
+				return cost_complexity_parameter * train_summary.size;
+			}
+		}
+		int GetTestBranchingCosts(const ADataView& data, const BranchContext& context, int feature) const {
+			return 0;
+		}
+		double GetBranchingCosts(const BranchContext& context, int feature) const { 
+			if constexpr (leaf_penalty) {
+				int multiplier = 1;
+				if (context.GetBranch().Depth() == 0) multiplier = 2;
+				return cost_complexity_parameter * train_summary.size * multiplier;
+			} else {
+				return cost_complexity_parameter * train_summary.size;
+			}
+		}
 		double ComputeD2BranchingCosts(const double& d2costs, int count) const { return d2costs; }
 
 		inline void GetInstanceLeafD2Costs(const AInstance* instance, int org_label, int label, double& costs, int multiplier) const { costs = multiplier * ((org_label == label) ? 0 : 1); }
-		void ComputeD2Costs(const double& d2costs, int count, double& costs) const { costs = d2costs; }
+		
+		void ComputeD2Costs(const double& d2costs, int count, double& costs, std::optional<BranchContext> context = std::nullopt) const { 
+			if constexpr (leaf_penalty) {
+				if (context && context->GetBranch().Depth() == 0) {
+					costs = d2costs + cost_complexity_parameter * count;
+				} else {
+					costs = d2costs;
+				}
+			} else {
+				costs = d2costs;
+			}
+		}
 		inline bool IsD2ZeroCost(const double d2costs) const { return std::abs(d2costs) <= 1e-6; }
+		
 		inline double GetWorstPerLabel(int label) const { return 1; }
 
 		/*

@@ -1,6 +1,8 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "base.h"
@@ -12,12 +14,18 @@ https://bitbucket.org/EmirD/murtree
 #include "solver/optimization_utils.h"
 #include "tasks/tasks.h"
 
-namespace STreeD {
+namespace SORTD {
 		
 	template<class OT>
 	struct Sols {
 		using SolType = typename OT::SolType;
 		SolType sol00, sol01, sol10, sol11;
+	};
+
+	template <class OT>
+	struct Labels {
+		using SolLabelType = typename OT::SolLabelType;
+		SolLabelType label00, label01, label10, label11;
 	};
 
 	struct IndexInfo {
@@ -47,9 +55,10 @@ namespace STreeD {
 		void InitializeIndexInfos(int num_features);
 
 		void GetIndexInfo(int f1, int f2, IndexInfo& index_info) const { index_info = index_infos[f1][f2]; }
-		void CalcLeafSol(SolType& sol, int label, SolLabelType& label_out) const;
+		void CalcLeafSol(SolType& sol, int label, SolLabelType& label_out, const std::optional<BranchContext>& context = std::nullopt) const;
 		void CalcSols(const Counts& counts, Sols<OT>& sols, int label, int f1, int f2) const;
 		void CalcSols(const Counts& counts, Sols<OT>& sols, int label, const IndexInfo& index) const;
+		void CalcSols(const Counts& counts, Sols<OT>& sols, Labels<OT>& labels, int label, const IndexInfo& index) const;
 		void CalcSol00(SolType& sol, int label, int f1, int f2) const;
 		void CalcSol11(SolType& sol, int label, int f1, int f2) const;
 

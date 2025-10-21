@@ -1,3 +1,8 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #pragma once
 #include "base.h"
 #include "model/data.h"
@@ -6,12 +11,12 @@
 #include "model/container.h"
 
 
-#define DBL_DIFF 1e-4
+#define DBL_DIFF 1e-6
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
-	using SolContainer = typename std::conditional<OT::total_order, Node<OT>, std::shared_ptr<Container<OT>>>::type;
+	using SolContainer =  Node<OT>;
 
 	/*
 	* Initialize an empty solution. 
@@ -20,14 +25,8 @@ namespace STreeD {
 	*/
 	template <class OT>
 	SolContainer<OT> InitializeSol(bool lb = false) {
-		if constexpr (OT::total_order) {
-			if (lb) return Node<OT>(OT::best);
-			return Node<OT>();
-		} else {
-			auto result = std::make_shared < Container<OT> >();
-			if (lb) result->Add(OT::best);
-			return result;
-		}
+		if (lb) return Node<OT>(OT::best);
+		return Node<OT>();
 	}
 
 	/*
@@ -38,16 +37,14 @@ namespace STreeD {
 		return InitializeSol<OT>(true);
 	}
 
-	/*
-	* Set the size budget of the solution set
-	* (not used currently)
+
+    /*
+	* Return a copy of the solution
 	*/
-	template <class OT>
-	void SetSolSizeBudget(SolContainer<OT>& sol, int max_depth, int max_num_nodes) {
-		if constexpr (!OT::total_order) {
-			return sol->SetSizeBudget(max_depth, max_num_nodes);
-		}
-	}
+    template <class OT>
+    std::shared_ptr<Container<OT>> CopySol(const std::shared_ptr<Container<OT>>& sol) {
+        return std::make_shared<Container<OT>>(*(sol.get()));
+    }
 
 	/*
 	* Return a copy of the solution
@@ -55,12 +52,9 @@ namespace STreeD {
 	template <class OT>
 	SolContainer<OT> CopySol
 	(const SolContainer<OT>& sol) {
-		if constexpr (OT::total_order) {
-			return sol;
-		} else {
-			return std::make_shared < Container<OT> >(*(sol.get()));
-		}
+		return sol;
 	}
+
 
 	/*
 	* Check if the solution is empty
@@ -69,34 +63,42 @@ namespace STreeD {
 	*/
 	template <class OT>
 	bool CheckEmptySol(const SolContainer<OT>& sol) {
-		if constexpr (OT::total_order) {
-			return sol.feature == INT32_MAX && sol.label == OT::worst_label;
-		} else {
-			return sol.get() == nullptr || sol->Size() == 0;
-		}
+		return sol.feature == INT32_MAX && sol.label == OT::worst_label;
 	}
 
-	/*
-	* Remove temporary data from a solution before storing it in the cache to safe space and limit copy operations
-	*/
-	template <class OT>
-	inline void SolClearTemp(SolContainer<OT>& sol) {
-		if constexpr (!OT::total_order) {
-			sol->RemoveTempData();
-		}
-	}
+    template <class OT>
+    bool CheckEmptySol(const std::shared_ptr<Container<OT>>& sol) {
+        return sol.get() == nullptr || sol->Size() == 0;
+    }
 
 	/*
 	* Add a solution to the solution set (if not dominated) or replace the solution if better
 	*/
 	template <class OT>
 	inline void AddSol(SolContainer<OT>& container, const Node<OT>& sol) {
-		if constexpr (OT::total_order) {
-			if (sol.solution < container.solution) container = sol;
-		} else {
-			container->Add(sol);
-		}
+		if (sol.solution < container.solution) container = sol;
 	}
+
+    template <class OT>
+    inline bool AddSubOptimalSols(std::shared_ptr<Container<OT>>& container, const Node<OT>& sol, const SolContainer<OT>& UB) {
+        if (sol.solution <= UB.solution) {
+            container->Push(sol);
+            return true;
+        }
+        return false;
+    }
+
+    template <class OT>
+    inline void AddSubOptimalSols(std::shared_ptr<Container<OT>>& container, const std::shared_ptr<Container<OT>>& sols, SolContainer<OT>& UB) {
+        container->Push(sols);
+        return;
+    }
+
+    template <class OT>
+    inline bool AddSubOptimalSols(SolContainer<OT>& container, const Node<OT>& sol, const SolContainer<OT>& UB) {
+        if (sol.solution < container.solution) container = sol;
+            return true;
+    }
 
 	/*
 	* Add a solution to the solution set (if not dominated) or replace the solution if better
@@ -104,15 +106,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline void AddSol(OT* task, const int depth, SolContainer<OT>& container, const Node<OT>& sol) {
-		if constexpr (OT::total_order) {
-			if (sol.solution < container.solution) container = sol;
-		} else {
-			if (depth == 0) {
-				container->AddD0(task, sol);
-			} else {
-				container->Add(sol);
-			}
-		}
+		if (sol.solution < container.solution) container = sol;
 	}
 
 	/*
@@ -120,11 +114,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline void AddSols(SolContainer<OT>& container, const SolContainer<OT>& sols) {
-		if constexpr (OT::total_order) {
-			if (sols.solution < container.solution) container = sols;
-		} else {
-			container->Add(*(sols.get()));
-		}
+		if (sols.solution < container.solution) container = sols;
 	}
 
 	/*
@@ -133,15 +123,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline void AddSols(OT* task, const int depth, SolContainer<OT>& container, const SolContainer<OT>& sols) {
-		if constexpr (OT::total_order) {
-			if (sols.solution < container.solution) container = sols;
-		} else {
-			if (depth == 0) {
-				container->AddD0(task, *(sols.get()));
-			} else {
-				container->Add(*(sols.get()));
-			}
-		}
+		if (sols.solution < container.solution) container = sols;
 	}
 
 	/*
@@ -150,29 +132,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline void AddSolsInv(SolContainer<OT>& container, const SolContainer<OT>& sols) {
-		if constexpr (OT::total_order) {
-			if (sols.solution > container.solution) container = sols;
-		} else {
-			container->AddInv(*(sols.get()));
-		}
-	}
-
-	/*
-	* Add relaxed solutions to the upper bound
-	* only if the current node is the root node, and the optimization task has constraints
-	* remove info  related to the constraints to increase likelihood of dominance
-	*/
-	template <class OT>
-	inline void AddRootRelaxSols(OT* task, const Branch& branch, SolContainer<OT>& UB, const SolContainer<OT>& container) {
-		if constexpr (!OT::total_order && OT::has_constraint) {
-			if (branch.Depth() == 0) {
-				for (auto& sol : container->GetSolutions()) {
-					auto relaxed_sol = sol;
-					task->RelaxRootSolution(relaxed_sol);
-					AddSol<OT>(UB, relaxed_sol);
-				}
-			}
-		}
+		if (sols.solution > container.solution) container = sols;
 	}
 
 	/*
@@ -185,21 +145,28 @@ namespace STreeD {
 		} else {
 			out = Node<OT>(feature, OT::Add(left.solution, right.solution), left.NumNodes(), right.NumNodes());
 		}
+//        out.solution = std::ceil(out.solution / 1e-4) * 1e-4;
 	}
+
+    template <class OT>
+    inline void CombineSols(typename OT::SolType left, typename OT::SolType right, typename OT::SolType branching_costs, typename OT::SolType& out) {
+        if constexpr (OT::has_branching_costs) {
+            out = left + right + branching_costs;
+        } else {
+            out =  left + right;
+        }
+//        out = std::round(out / 1e-4) * 1e-4;
+    }
 
 	/*
 	* Return true iff the left solution value dominates the rigt solution value
 	*/
 	template <class OT>
 	bool LeftDominatesRight(const typename OT::SolType& left, const typename OT::SolType& right) {
-		if constexpr (OT::total_order) {
-			if constexpr (std::is_same<typename OT::SolType, double>::value) {
+		if constexpr (std::is_same<typename OT::SolType, double>::value) {
 				return left * (1 + DBL_DIFF) <= right || std::abs(left - right) <= DBL_DIFF * left;
 			}
 			return left <= right;
-		} else {
-			return OT::Dominates(left, right);
-		}
 	}
 
 	/*
@@ -207,14 +174,21 @@ namespace STreeD {
 	*/
 	template <class OT>
 	bool LeftStrictDominatesRight(const typename OT::SolType& left, const typename OT::SolType& right) {
-		if constexpr (OT::total_order) {
-			if constexpr (std::is_same<typename OT::SolType, double>::value) {
+		if constexpr (std::is_same<typename OT::SolType, double>::value) {
 				return left * (1 + DBL_DIFF)  < right;
 			}
 			return left < right;
-		} else {
-			return OT::Dominates(left, right) && left != right;
-		}
+	}
+
+	/*
+	* Return true iff the left solution value + the rashomon bound delta strictly dominates the rigt solution value
+	*/
+	template <class OT>
+	bool UBStrictDominatesRight(const typename OT::SolType& left, const typename OT::SolType& right, const typename OT::SolType& rash_delta) {
+		if constexpr (std::is_same<typename OT::SolType, double>::value) {
+				return (left + rash_delta) * (1 + DBL_DIFF) < right;
+			}
+			return left + rash_delta < right;
 	}
 
 	/*
@@ -222,11 +196,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline bool LeftDominatesRightSol(const SolContainer<OT>& left, const Node<OT>& right) {
-		if constexpr (OT::total_order) {
-			return LeftDominatesRight<OT>(left.solution, right.solution);
-		} else {
-			return left->Dominates(right);
-		}
+		return LeftDominatesRight<OT>(left.solution, right.solution);
 	}
 
 	/*
@@ -234,11 +204,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline bool LeftStrictDominatesRightSol(const SolContainer<OT>& left, const Node<OT>& right) {
-		if constexpr (OT::total_order) {
-			return LeftStrictDominatesRight<OT>(left.solution, right.solution);
-		} else {
-			return left->StrictDominates(right);
-		}
+		return LeftStrictDominatesRight<OT>(left.solution, right.solution);
 	}
 
 	/*
@@ -246,14 +212,7 @@ namespace STreeD {
 	*/
 	template <class OT>
 	inline bool LeftDominatesRight(const SolContainer<OT>& left, const SolContainer<OT>& right) {
-		if constexpr (OT::total_order) {
-			return LeftDominatesRight<OT>(left.solution, right.solution);
-		} else {
-			for (const Node<OT>& assignment : left->GetSolutions()) {
-				if (!right->DominatesInv(assignment)) { return false; }
-			}
-			return true;
-		}
+		return LeftDominatesRight<OT>(left.solution, right.solution);
 	}
 
 	/*
@@ -261,14 +220,15 @@ namespace STreeD {
 	*/
 	template <class OT>
 	bool LeftStrictDominatesRight(const SolContainer<OT>& left, const SolContainer<OT>& right) {
-		if constexpr (OT::total_order) {
-			return LeftStrictDominatesRight<OT>(left.solution, right.solution);
-		} else {
-			for (const auto& assignment : left->GetSolutions()) {
-				if (!right->StrictDominatesInv(assignment)) { return false; }
-			}
-			return true;
-		}
+		return LeftStrictDominatesRight<OT>(left.solution, right.solution);
+	}
+
+	/*
+	* Return true iff for all left solutions + rashomon bound delta there is at least one right solution that inverse strictly dominates it
+	*/
+	template <class OT>
+	bool UBStrictDominatesRight(const SolContainer<OT>& left, const SolContainer<OT>& right, const typename OT::SolType& rash_delta) {
+		return UBStrictDominatesRight<OT>(left.solution, right.solution, rash_delta);
 	}
 
 	/*
@@ -276,18 +236,10 @@ namespace STreeD {
 	*/
 	template <class OT>
 	bool SolutionsEqual(const SolContainer<OT>& left, const SolContainer<OT>& right) {
-		if constexpr (OT::total_order) {
-			if constexpr (std::is_same<typename OT::SolType, double>::value) {
+		if constexpr (std::is_same<typename OT::SolType, double>::value) {
 				return std::abs(left.solution - right.solution) <= DBL_DIFF * left.solution;
 			}
 			return left.solution == right.solution;
-		} else {
-			if (left->Size() == 0 || right->Size() == 0 || left->Size() != right->Size()) return false;
-			for (size_t i = 0; i < left->Size(); i++) {
-				if (left->GetSolutions()[i].solution != right->GetSolutions()[i].solution) return false;
-			}
-			return true;
-		}
 	}
 
 	/*
@@ -296,7 +248,6 @@ namespace STreeD {
 	*/
 	template<class OT>
 	bool CheckReconstructSolution(const Node<OT>& left, const Node<OT>& right, const typename OT::SolType& branching_costs, TreeNode<OT>* tree) {
-		static_assert(!(OT::total_order));
 		auto combi_sol = OT::Add(left.solution, right.solution);
 		if constexpr (OT::has_branching_costs) {
 			combi_sol = OT::Add(combi_sol, branching_costs);
@@ -313,14 +264,7 @@ namespace STreeD {
 
 	template<class OT>
 	void AddValue(SolContainer<OT>& solutions, const typename OT::SolType& value) {
-		if constexpr (OT::total_order) {
-			OT::Add(solutions.solution, value, solutions.solution);
-		} else {
-			for (int i = 0; i < solutions.Size(); i++) {
-				auto& sol = solutions->GetMutable(i);
-				OT::Add(sol.solution, value, sol.solution);
-			}
-		}
+		OT::Add(solutions.solution, value, solutions.solution);
 	}
 
 }

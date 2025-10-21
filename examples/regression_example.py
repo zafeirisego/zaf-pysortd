@@ -1,17 +1,18 @@
-from pystreed import STreeDRegressor
-from sklearn.metrics import r2_score, mean_squared_error
+from pysortd import SORTDRegressor
 import pandas as pd
 
-df = pd.read_csv("data/regression/airfoil.csv", sep=" ", header=None)
-X = df[df.columns[1:]]
-y = df[0]
+df = pd.read_csv('data/regression/airfoil.csv', sep=" ", header=None)
+X, y = df.iloc[:, 1:], df.iloc[:, 0]
 
-model = STreeDRegressor(max_depth = 3, verbose=True)
+model = SORTDRegressor("cost-complex-regression",max_depth = 3, cost_complexity=0.01, verbose=True,
+                       use_rashomon_multiplier=True, rashomon_multiplier=0.12,max_num_trees=1000)
+
 model.fit(X, y)
+rashomon_set_size = model.rashomon_set_size
+solutions = model.get_solution_list()
 
-yhat = model.predict(X)
-
-r2 = r2_score(y, yhat)
-mse = mean_squared_error(y, yhat)
-print(f"Train R2 Score: {r2}")
-print(f"Train MSE Score: {mse}")
+solution_values = []
+for solution in solutions:
+    values = [solution.objective / len(X) for d in range(solution.num_solutions)]
+    solution_values.extend(values)
+pass

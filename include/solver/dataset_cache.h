@@ -1,11 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "solver/cache_entry.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	//key: a dataset
 	//value: cached value contains the optimal value and the lower bound
@@ -14,7 +16,7 @@ namespace STreeD {
 	public:
 
 		using SolType = typename OT::SolType;
-		using SolContainer = typename std::conditional<OT::total_order, Node<OT>, std::shared_ptr<Container<OT>>>::type;
+		using SolContainer = Node<OT>;
 
 		DatasetCache() = delete;
 		DatasetCache(int max_branch_length);
@@ -25,12 +27,13 @@ namespace STreeD {
 		SolContainer RetrieveOptimalAssignment(ADataView&, const Branch& branch, int depth, int num_nodes);
 		//void TransferAssignmentsForEquivalentBranches(const ADataView&, const Branch& branch_source, const ADataView&, const Branch& branch_destination);//this updates branch_destination with all solutions from branch_source. Should only be done if the branches are equivalent.
 
+		//related to storing/retrieving branchtracker cache entries
+		BranchTrackerCacheEntry<OT> RetrieveBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes);
+		void UpdateBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes, BranchTrackerCacheEntry<OT>& branch_cache_entry);
+
 		//related to storing/retrieving lower bounds
 		void UpdateLowerBound(ADataView&, const Branch& branch, const SolContainer& lower_bound, int depth, int num_nodes);
 		SolContainer RetrieveLowerBound(ADataView&, const Branch& branch, int depth, int num_nodes);
-
-		int GetMaxDepthSearched(ADataView& data, const Branch& branch);
-		void UpdateMaxDepthSearched(ADataView& data, const Branch& branch, int depth);
 
 		int NumEntries() const;
 

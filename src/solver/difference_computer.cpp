@@ -1,11 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 
 #include "solver/difference_computer.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	int DifferenceMetrics::GetNumRemovals() const {
 		int _num_removals = 0;

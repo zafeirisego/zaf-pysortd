@@ -1,10 +1,13 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "solver/branch_cache.h"
+#include "rashomon/rashomon_utils.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	bool BranchCache<OT>::IsOptimalAssignmentCached(ADataView& data, const Branch& branch, int depth, int num_nodes) {
@@ -27,20 +30,15 @@ namespace STreeD {
 	void BranchCache<OT>::StoreOptimalBranchAssignment(ADataView& data, const Branch& branch, BranchCache<OT>::SolContainer& optimal_solutions, int depth, int num_nodes) {
 		runtime_assert(depth <= num_nodes && num_nodes > 0);
 
-		SolClearTemp<OT>(optimal_solutions);
-
 		auto& hashmap = cache[branch.Depth()];
 		auto iter_vector_entry = hashmap.find(branch);
 		int sol_num_nodes = num_nodes;
-		if constexpr (OT::total_order) {
-			sol_num_nodes = optimal_solutions.NumNodes();
-		}
+		sol_num_nodes = optimal_solutions.NumNodes();
 		int optimal_node_depth = std::min(depth, num_nodes); //this is an estimate of the depth, it could be lower actually. We do not consider lower for simplicity, but it would be good to consider it as well.
 
 		//if the branch has never been seen before, create a new entry for it
 		if (iter_vector_entry == hashmap.end()) {
 			CacheEntryVector<OT> vector_entry;
-			vector_entry.UpdateMaxDepthSearched(depth);
 			for (int node_budget = sol_num_nodes; node_budget <= num_nodes; node_budget++) {
 				for (int depth_budget = optimal_node_depth; depth_budget <= std::min(depth, node_budget); depth_budget++) {
 					vector_entry.push_back({ depth_budget, node_budget, optimal_solutions });
@@ -48,7 +46,6 @@ namespace STreeD {
 			}
 			cache[branch.Depth()].insert(std::pair<Branch, CacheEntryVector<OT> >(branch, vector_entry));
 		} else {
-			iter_vector_entry->second.UpdateMaxDepthSearched(depth);
 			//this sol is valid for size=[opt.NumNodes, num_nodes] and depths d=min(size, depth)
 
 			//now we need to see if other node budgets have been seen before. 
@@ -135,7 +132,7 @@ namespace STreeD {
 				
 		auto iter = hashmap.find(branch);
 		if (iter == hashmap.end()) { return empty_sol; }
-		
+
 		auto& entries = iter->second.entries;
 		for (CacheEntry<OT>& entry : entries) {
 			if (entry.GetDepthBudget() == depth && entry.GetNodeBudget() == num_nodes && entry.IsOptimal()) {
@@ -144,6 +141,57 @@ namespace STreeD {
 		}
 		return empty_sol;
 	}
+
+    template <class OT>
+    BranchTrackerCacheEntry<OT> BranchCache<OT>::RetrieveBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes) {
+        auto& hashmap = cache[branch.Depth()];
+
+        auto iter = hashmap.find(branch);
+        if (iter == hashmap.end()) { return BranchTrackerCacheEntry<OT>(); }
+
+		auto& entries = iter->second.entries;
+        for (auto& entry : entries) {
+            if (entry.GetDepthBudget() == depth && entry.GetNodeBudget() == num_nodes) {
+//                std::shared_ptr<std::vector<RashomonTreeNode<OT>*>> trees = entry.GetBranchTrackerTrees();
+                return entry.GetBranchTrackerCacheEntry();
+            }
+        }
+        return BranchTrackerCacheEntry<OT>();
+    }
+
+    template <class OT>
+    void BranchCache<OT>::UpdateBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes, BranchTrackerCacheEntry<OT>& branch_cache_entry) {
+        runtime_assert(depth <= num_nodes && num_nodes > 0);
+
+        auto& hashmap = cache[branch.Depth()];
+        auto iter_vector_entry = hashmap.find(branch);
+
+        //if the branch has never been seen before, create a new entry for it
+        if (iter_vector_entry == hashmap.end()) {
+			CacheEntryVector<OT> vector_entry;
+            vector_entry.push_back({ depth, num_nodes});
+            vector_entry.front().SetBranchTrackerCacheEntry(branch_cache_entry);
+            cache[branch.Depth()].insert(std::pair<Branch, CacheEntryVector<OT>>(branch, vector_entry));
+
+        } else {
+            bool cache_updated = false;
+			auto& entries = iter_vector_entry->second.entries;
+            for (CacheEntry<OT>& entry : entries) {
+                if (entry.GetNodeBudget() == num_nodes && entry.GetDepthBudget() == depth)
+                {
+                    entry.SetBranchTrackerCacheEntry(branch_cache_entry);
+                    cache_updated = true;
+                    break;
+                }
+            }
+            if(!cache_updated) {
+				CacheEntryVector<OT> vector_entry;
+                vector_entry.push_back({ depth, num_nodes});
+                vector_entry.front().SetBranchTrackerCacheEntry(branch_cache_entry);
+                cache[branch.Depth()].insert(std::pair<Branch, CacheEntryVector<OT> >(branch, vector_entry));
+            }
+        }
+    }
 
 	template <class OT>
 	void BranchCache<OT>::UpdateLowerBound(ADataView& data, const Branch& branch, const typename BranchCache<OT>::SolContainer& lower_bound, int depth, int num_nodes) {
@@ -211,24 +259,6 @@ namespace STreeD {
 	}
 
 	template <class OT>
-	int BranchCache<OT>::GetMaxDepthSearched(ADataView&, const Branch& branch) {
-		auto& hashmap = cache[branch.Depth()];
-		auto iter = hashmap.find(branch);
-
-		if (iter == hashmap.end()) { return 0; }
-		return iter->second.GetMaxDepthSearched();
-	}
-
-	template <class OT>
-	void BranchCache<OT>::UpdateMaxDepthSearched(ADataView&, const Branch& branch, int depth) {
-		auto& hashmap = cache[branch.Depth()];
-		auto iter = hashmap.find(branch);
-
-		if (iter == hashmap.end()) { return ; }
-		iter->second.UpdateMaxDepthSearched(depth);
-	}
-
-	template <class OT>
 	int BranchCache<OT>::NumEntries() const {
 		size_t count = 0;
 		for (auto& c : cache) {
@@ -237,21 +267,7 @@ namespace STreeD {
 		return int(count);
 	}
 
-	template class BranchCache<Accuracy>;
 	template class BranchCache<CostComplexAccuracy>;
-	template class BranchCache<BalancedAccuracy>;
-
-	template class BranchCache<Regression>;
 	template class BranchCache<CostComplexRegression>;
-	template class BranchCache<PieceWiseLinearRegression>;
-	template class BranchCache<SimpleLinearRegression>;
-
-	template class BranchCache<CostSensitive>;
-	template class BranchCache<InstanceCostSensitive>;
-	template class BranchCache<F1Score>;
-	template class BranchCache<GroupFairness>;
-	template class BranchCache<EqOpp>;
-	template class BranchCache<PrescriptivePolicy>;
-	template class BranchCache<SurvivalAnalysis>;
 
 }

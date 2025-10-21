@@ -1,10 +1,12 @@
 /**
 Partly from Emir Demirovic "MurTree bi-objective"
 https://bitbucket.org/EmirD/murtree-bi-objective
+ Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "solver/counter.h"
 
-namespace STreeD {
+namespace SORTD {
 	Counter::Counter(int num_features) : num_features(num_features) {
 		ResetToZeros();
 	}

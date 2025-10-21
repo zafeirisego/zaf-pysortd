@@ -1,12 +1,14 @@
 /**
-Partly from Emir Demirovic "MurTree bi-objective"
-https://bitbucket.org/EmirD/murtree-bi-objective
+Partly from Emir Demirovic "MurTree"
+https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma once
 #include "base.h"
 #include "model/data.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	template <class OT>
 	class CostStorage {

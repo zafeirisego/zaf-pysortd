@@ -1,10 +1,10 @@
 /**
-Partly from Emir Demirovic "MurTree"
-https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #include "utils/parameter_handler.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	ParameterHandler ParameterHandler::DefineParameters() {
 		ParameterHandler parameters;
@@ -20,19 +20,7 @@ namespace STreeD {
 			"Task to optimize.",
 			"accuracy",
 			"Main Parameters",
-			{ "accuracy", "cost-complex-accuracy", "balanced-accuracy",
-			"f1-score", "group-fairness", "survival-analysis",
-			"regression", "cost-complex-regression", "piecewise-linear-regression",
-			"simple-linear-regression", "equality-of-opportunity", "cost-sensitive",
-			"prescriptive-policy", "instance-cost-sensitive" }
-		);
-
-		parameters.DefineBooleanParameter
-		(
-			"hyper-tune",
-			"Enable/disable hyper-tuning.",
-			false,
-			"Main Parameters"
+			{ "cost-complex-accuracy", "cost-complex-regression" }
 		);
 
 		parameters.DefineStringParameter
@@ -57,7 +45,7 @@ namespace STreeD {
 		(
 			"time",
 			"Maximum runtime given in seconds.",
-			3600, //default value
+			600, //default value
 			"Main Parameters",
 			0, //min value
 			INT32_MAX //max value
@@ -77,7 +65,7 @@ namespace STreeD {
 		(
 			"max-num-nodes",
 			"Maximum number of *decision/feature nodes* allowed. Note that a tree with k feature nodes has k+1 leaf nodes.",
-			7, //default value
+			INT32_MAX, //default value
 			"Main Parameters",
 			0,
 			INT32_MAX
@@ -121,14 +109,6 @@ namespace STreeD {
 			"Main Parameters"
 		);
 
-		parameters.DefineBooleanParameter
-		(
-			"all-trees",
-			"Instructs the algorithm to compute trees using all allowed combinations of max-depth and max-num-nodes. Used to stress-test the algorithm.",
-			false,
-			"Main Parameters"
-		);
-
 		parameters.DefineFloatParameter
 		(
 			"train-test-split",
@@ -157,62 +137,13 @@ namespace STreeD {
 			INT32_MAX // max value
 		);
 
-		parameters.DefineBooleanParameter
-		(
-			"use-terminal-solver",
-			"Use the special solver for trees of depth two.",
-			true,
-			"Algorithmic Parameters"
-		);
-
-		parameters.DefineBooleanParameter
-		(
-			"use-similarity-lower-bound",
-			"Activate similarity-based lower bounding. Disabling this option may be better for some benchmarks, but on most of our tested datasets keeping this on was beneficial.",
-			true,
-			"Algorithmic Parameters"
-		);
-
-		parameters.DefineBooleanParameter
-		(
-			"use-upper-bound",
-			"Use upper bounding. Disabling this option may be better for some benchmarks, specifically when the number of objectives is high.",
-			true,
-			"Algorithmic Parameters"
-		);
-
-		parameters.DefineBooleanParameter
-		(
-			"use-lower-bound",
-			"Use lower bounding. Disabling this option may be better for some benchmarks, specifically when the number of objectives is high.",
-			true,
-			"Algorithmic Parameters"
-		);
-
-		parameters.DefineBooleanParameter
-		(
-			"use-task-lower-bound",
-			"Use task defined lower bounding for tasks that define a custom lower bound. Disabling this option may be better for some benchmarks if the custom bound takes long to compute.",
-			true,
-			"Algorithmic Parameters"
-		);
-
-		parameters.DefineFloatParameter(
-			"upper-bound",
-			"Search for a tree better than the provided upper bound (numeric).",
-			INT32_MAX, // default
-			"Algorithmic Parameters",
-			0.0, // min
-			DBL_MAX // max
-		);
-
 		parameters.DefineStringParameter
 		(
 			"feature-ordering",
 			"Feature ordering strategy used to determine the order in which features will be inspected in each node.",
 			"in-order", //default value
 			"Algorithmic Parameters",
-			{ "in-order", "gini", "mse"}
+			{ "in-order", "gini" }
 		);
 
 		parameters.DefineIntegerParameter
@@ -229,7 +160,8 @@ namespace STreeD {
 		(
 			"use-branch-caching",
 			"Use branch caching to store computed subtrees.",
-			true, //default value
+			//\"Dataset\" is more powerful than \"branch\" but may required more computational time. Need to be determined experimentally. \"Closure\" is experimental and typically slower than other options.",
+			false, //default value
 			"Algorithmic Parameters"
 		);
 
@@ -237,7 +169,7 @@ namespace STreeD {
 		(
 			"use-dataset-caching",
 			"Use dataset caching to store computed subtrees. Dataset-caching is more powerful than branch-caching but may required more computational time.",
-			false, //default value
+			true, //default value
 			"Algorithmic Parameters"
 		);
 
@@ -252,36 +184,6 @@ namespace STreeD {
 		);
 
 
-		parameters.DefineStringParameter
-		(
-			"cost-file",
-			"Location of the file with information about the cost-sensitive classification.",
-			"", //default value
-			"Task-specific Parameters",
-			{},
-			true
-		);
-
-		parameters.DefineStringParameter
-		(
-			"ppg-teacher-method",
-			"Type of teacher model for prescriptive policy generation.",
-			"DM", //default value
-			"Task-specific Parameters",
-			{"DM", "IPW", "DR"},
-			true
-		);
-
-		parameters.DefineFloatParameter
-		(
-			"discrimination-limit",
-			"The maximum allowed percentage of discrimination in the training tree",
-			1.0, //default value
-			"Task-specific Parameters",
-			0, //min value
-			1.0 //max value
-		);
-
 		parameters.DefineFloatParameter
 		(
 			"cost-complexity",
@@ -292,25 +194,6 @@ namespace STreeD {
 			1.0 //max value
 		);
 
-		parameters.DefineFloatParameter
-		(
-			"lasso-penalty",
-			"The lasso lambda penalty.",
-			0.00, // default value
-			"Objective Parameters",
-			0.0, //min value
-			1e12 //max value
-		);
-
-		parameters.DefineFloatParameter
-		(
-			"ridge-penalty",
-			"The ridge gamma penalty.",
-			0.00, // default value
-			"Objective Parameters",
-			0.0, //min value
-			1e12 //max value
-		);
 
 		parameters.DefineStringParameter
 		(
@@ -321,6 +204,49 @@ namespace STreeD {
 			{ "equivalent", "kmeans" },
 			true
 		);
+
+        parameters.DefineBooleanParameter
+        (
+                "use-rashomon-multiplier",
+                "Use rashomon multiplier to determine how worse a rashomon tree can be compared to the optimal tree",
+                true, //default value
+                "Algorithmic Parameters"
+        );
+
+        parameters.DefineFloatParameter(
+                "rashomon-multiplier",
+                "Upper bound of the rashomon set trees calculated by best_obj * (1 + rashomon-multiplier).",
+                0.2, // default
+                "Algorithmic Parameters",
+                0.0, // min
+                DBL_MAX // max
+        );
+
+        parameters.DefineBooleanParameter
+                (
+                    "track-tree-statistics",
+                    "Calculates feature and node number statistics.",
+                    false, //default value
+                    "Algorithmic Parameters"
+                );
+
+        parameters.DefineIntegerParameter
+                (
+                        "max-num-trees",
+                        "Upper bound for the number of trees in the rashomon set.",
+                        INT64_MAX,
+                        "Algorithmic Parameters",
+                        1,
+                        INT64_MAX
+                );
+
+        parameters.DefineBooleanParameter
+                (
+                        "ignore-trivial-extensions",
+                        "Ignores the solutions where a split cannot improve accuracy",
+                        false, //default value
+                        "Algorithmic Parameters"
+                );
 
 		return parameters;
 	}

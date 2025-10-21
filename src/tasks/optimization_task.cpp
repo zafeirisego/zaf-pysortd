@@ -1,6 +1,11 @@
+/**
+From Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "tasks/tasks.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	void OptimizationTask::InformTrainData(const ADataView& train_data, const DataSummary& train_summary) {
 		this->train_summary = train_summary;

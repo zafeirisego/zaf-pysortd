@@ -1,6 +1,11 @@
+/**
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #include "solver/cache.h"
 
-namespace STreeD {
+namespace SORTD {
 
 	template <class OT>
 	bool Cache<OT>::IsOptimalAssignmentCached(ADataView& data, const Branch& branch, int depth, int num_nodes) {
@@ -15,7 +20,7 @@ namespace STreeD {
 
 	template <class OT>
 	void Cache<OT>::StoreOptimalBranchAssignment(ADataView& data, const Branch& branch, SolContainer& opt_sols, int depth, int num_nodes) {
-		if (!use_optimal_caching) return;
+        if (!use_optimal_caching) return;
 		if (use_branch_caching) branch_cache.StoreOptimalBranchAssignment(data, branch, opt_sols, depth, num_nodes);
 		if (use_dataset_caching) dataset_cache.StoreOptimalBranchAssignment(data, branch, opt_sols, depth, num_nodes);
 	}
@@ -34,12 +39,30 @@ namespace STreeD {
 		return empty_sol;
 	}
 
+    template <class OT>
+	BranchTrackerCacheEntry<OT> Cache<OT>::RetrieveBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes) {
+        if (!use_branch_caching && !use_dataset_caching) return BranchTrackerCacheEntry<OT>();
+        if (use_branch_caching) {
+            return branch_cache.RetrieveBranchTracker(data, branch, depth, num_nodes);
+		} else if (use_dataset_caching) {
+			return dataset_cache.RetrieveBranchTracker(data, branch, depth, num_nodes);
+		}
+		return BranchTrackerCacheEntry<OT>();
+    }
+
+    template <class OT>
+    void Cache<OT>::UpdateBranchTracker(ADataView& data, const Branch& branch, int depth, int num_nodes, BranchTrackerCacheEntry<OT>& branch_cache_entry) {
+        runtime_assert(depth <= num_nodes);
+        if (!use_branch_caching && !use_dataset_caching) { return; }
+
+        if (use_branch_caching) branch_cache.UpdateBranchTracker(data, branch, depth, num_nodes,branch_cache_entry);
+		if (use_dataset_caching) dataset_cache.UpdateBranchTracker(data, branch, depth, num_nodes, branch_cache_entry);
+    }
+
 	template <class OT>
 	void Cache<OT>::UpdateLowerBound(ADataView& data, const Branch& branch, typename Cache<OT>::SolContainer& lower_bound, int depth, int num_nodes) {
 		runtime_assert(depth <= num_nodes);
 		if (!use_lower_bound_caching) { return; }
-		
-		SolClearTemp<OT>(lower_bound);
 		
 		if (use_branch_caching) branch_cache.UpdateLowerBound(data, branch, lower_bound, depth, num_nodes);
 		if (use_dataset_caching) dataset_cache.UpdateLowerBound(data, branch, lower_bound, depth, num_nodes);
@@ -68,35 +91,7 @@ namespace STreeD {
 		// Dataset caching do not need to transfer equivalent branches
 	}
 
-	template <class OT>
-	void Cache<OT>::UpdateMaxDepthSearched(ADataView& data, const Branch& branch, int depth) {
-		if (use_branch_caching) branch_cache.UpdateMaxDepthSearched(data, branch, depth);
-		if (use_dataset_caching) dataset_cache.UpdateMaxDepthSearched(data, branch, depth);
-	}
-
-	template <class OT>
-	int Cache<OT>::GetMaxDepthSearched(ADataView& data, const Branch& branch) {
-		return std::max(
-			use_branch_caching ? branch_cache.GetMaxDepthSearched(data, branch) : 0,
-			use_dataset_caching ? dataset_cache.GetMaxDepthSearched(data, branch) : 0
-		);
-	}
-
-	template class Cache<Accuracy>;
 	template class Cache<CostComplexAccuracy>;
-	template class Cache<BalancedAccuracy>;
-
-	template class Cache<Regression>;
 	template class Cache<CostComplexRegression>;
-	template class Cache<PieceWiseLinearRegression>;
-	template class Cache<SimpleLinearRegression>;
-
-	template class Cache<CostSensitive>;
-	template class Cache<InstanceCostSensitive>;
-	template class Cache<F1Score>;
-	template class Cache<GroupFairness>;
-	template class Cache<EqOpp>;
-	template class Cache<PrescriptivePolicy>;
-	template class Cache<SurvivalAnalysis>;
 
 }

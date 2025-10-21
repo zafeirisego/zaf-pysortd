@@ -1,9 +1,14 @@
+/**
+ Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
+ */
+
 #pragma once
 #include "model/container.h"
 #include "solver/tree.h"
 #include "solver/data_splitter.h"
 
-namespace STreeD {
+namespace SORTD {
 	
 	class OptimizationTask;
 
@@ -11,6 +16,8 @@ namespace STreeD {
 		using ScoreType = double;
 		
 		Score() = default;
+        Score(const Score& other) = default;  // Copy constructor
+        Score(Score&& other) = default;       // Move constructor
 
 		ScoreType score{ 0 };			// the test score obtained on the data
 		double average_path_length{ 0 };// the average path (question) length
@@ -101,37 +108,48 @@ namespace STreeD {
 
 		SolverResult() = default;
 
-		inline bool IsFeasible() const { return scores.size() > 0; }
+		inline bool IsFeasible() const { return optimal_scores.size() > 0; }
 		inline bool IsProvenOptimal() const { return is_proven_optimal; }
+        inline bool IsCompleteEnumaration() const { return is_complete_enumaration; }
+		inline bool IsExhausted() const { return is_exhausted; }
 		int GetBestDepth() const;
 		int GetBestNodeCount() const;
-		inline size_t NumSolutions() const { return scores.size(); }
-		inline void SetScore(size_t index, const std::shared_ptr<Score>& score) { scores[index] = score; }
+		inline size_t NumSolutions() const { return optimal_scores.size(); }
+		inline void SetScore(size_t index, const std::shared_ptr<Score>& score) { optimal_scores[index] = score; }
 
 		bool is_proven_optimal{ false };
-		std::vector<std::shared_ptr<Score>> scores;
+        bool is_complete_enumaration{ false };
+		bool is_exhausted{ false };
+		std::vector<std::shared_ptr<Score>> optimal_scores;
 		size_t best_index{ 0 };
 		std::vector<int> depths, num_nodes;
 		std::vector<std::string> tree_strings;
+        size_t rashomon_set_size = 0;
+        std::vector<size_t> root_solution_counts, solution_counts_query;
+        std::vector<size_t> root_feature_stats, feature_stats, num_nodes_stats;
+        std::vector<size_t> num_active_split_tracker_per_depth;
+        std::vector<size_t> num_average_solution_per_split_tracker;
 	};
 
 	template <class OT>
 	struct SolverTaskResult : public SolverResult {
 		SolverTaskResult() = default;
 
+        using LabelType = typename OT::LabelType;
+
 		void AddSolution(std::shared_ptr<Tree<OT>> tree, std::shared_ptr<Score> score) {
 			size_t i;
-			for (i = 0; i < scores.size(); i++) {
-				if (scores[i]->score > score->score) break;
+			for (i = 0; i < optimal_scores.size(); i++) {
+				if (optimal_scores[i]->score > score->score) break;
 			}
 			trees.insert(trees.begin() + i, tree);
-			scores.insert(scores.begin() + i, score);
+			optimal_scores.insert(optimal_scores.begin() + i, score);
 			depths.insert(depths.begin() + i, tree->Depth());
-			num_nodes.insert(num_nodes.begin() + i, tree->NumNodes());
+			num_nodes.insert(num_nodes.begin() + i, tree->NumBranchingNodes());
 			tree_strings.insert(tree_strings.begin() + i, tree->ToString());
-		}
-
+        }
 		std::vector<std::shared_ptr<Tree<OT>>> trees;
+        std::shared_ptr<std::vector<std::shared_ptr<AbstractSolutionTracker<OT>>>> rashomon_solutions;
 	};
 
 }

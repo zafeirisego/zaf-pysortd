@@ -1,12 +1,14 @@
 /**
 Partly from Emir Demirovic "MurTree"
 https://bitbucket.org/EmirD/murtree
+Partly from Jacobus G.M. van der Linden “STreeD”
+https://github.com/AlgTUDelft/pystreed
 */
 #pragma warning( disable: 6386 )
 #include "model/feature_vector.h"
 
 
-namespace STreeD {
+namespace SORTD {
 
 	FeatureVector::FeatureVector(const std::vector<bool>& feature_values, int id) :
 		id(id), num_features(int(feature_values.size())) {
