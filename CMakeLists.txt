@@ -82,6 +82,7 @@ set(SORTD_HEADER_FILES
 
 	${PROJECT_INCLUDE_DIR}/tasks/tasks.h
 	${PROJECT_INCLUDE_DIR}/tasks/optimization_task.h
+	${PROJECT_INCLUDE_DIR}/tasks/average_depth_accuracy.h
 	${PROJECT_INCLUDE_DIR}/tasks/accuracy/cost_complex_accuracy.h
 	${PROJECT_INCLUDE_DIR}/tasks/regression/cost_complex_regression.h
 	${PROJECT_INCLUDE_DIR}/tasks/regression/ckmeans/Ckmeans.1d.dp.h
@@ -122,6 +123,7 @@ set(SORTD_SRC_FILES
 	${PROJECT_SOURCE_DIR}/rashomon/solution_tracker.cpp
 	
 	${PROJECT_SOURCE_DIR}/tasks/optimization_task.cpp
+	${PROJECT_SOURCE_DIR}/tasks/average_depth_accuracy.cpp
 	${PROJECT_SOURCE_DIR}/tasks/accuracy/cost_complex_accuracy.cpp
 	${PROJECT_SOURCE_DIR}/tasks/regression/cost_complex_regression.cpp
 	${PROJECT_SOURCE_DIR}/tasks/regression/ckmeans/Ckmeans.1d.dp.cpp

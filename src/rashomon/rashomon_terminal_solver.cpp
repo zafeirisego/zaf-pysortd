@@ -487,5 +487,6 @@ namespace SORTD {
 
     template class RashomonTerminalSolver<CostComplexAccuracy>;
     template class RashomonTerminalSolver<CostComplexRegression>;
+    template class RashomonTerminalSolver<AverageDepthAccuracy>;
 
 }

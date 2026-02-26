@@ -287,5 +287,6 @@ namespace SORTD {
 
 	template class DatasetCache<CostComplexAccuracy>;
 	template class DatasetCache<CostComplexRegression>;
+	template class DatasetCache<AverageDepthAccuracy>;
 
 }

@@ -269,5 +269,6 @@ namespace SORTD {
 
 	template class BranchCache<CostComplexAccuracy>;
 	template class BranchCache<CostComplexRegression>;
+	template class BranchCache<AverageDepthAccuracy>;
 
 }

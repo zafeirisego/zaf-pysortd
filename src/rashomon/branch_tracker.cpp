@@ -146,5 +146,6 @@ namespace SORTD {
 
     template struct BranchTracker<CostComplexAccuracy>;
     template struct BranchTracker<CostComplexRegression>;
+    template struct BranchTracker<AverageDepthAccuracy>;
 
 }

@@ -50,6 +50,9 @@ int main(int argc, char* argv[]) {
 	} else if (task == "cost-complex-regression") {
 		solver =  new SORTD::Solver<SORTD::CostComplexRegression>(parameters, &rng);
 		SORTD::FileReader::ReadData<SORTD::CostComplexRegression>(parameters, data, train_data, test_data, &rng);
+	} else if (task == "average-depth-accuracy") {
+	        solver =  new SORTD::Solver<SORTD::AverageDepthAccuracy>(parameters, &rng);
+		SORTD::FileReader::ReadData<SORTD::AverageDepthAccuracy>(parameters, data, train_data, test_data, &rng);
 	} else {
 		std::cout << "Encountered unknown optimization task: " << task << std::endl;
 		exit(1);

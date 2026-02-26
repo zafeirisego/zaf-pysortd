@@ -68,5 +68,6 @@ namespace SORTD {
 
 	template class CostStorage<CostComplexAccuracy>;
 	template class CostStorage<CostComplexRegression>;
+	template class CostStorage<AverageDepthAccuracy>;
 
 }

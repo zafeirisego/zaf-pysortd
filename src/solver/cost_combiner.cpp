@@ -585,5 +585,6 @@ namespace SORTD {
 
 	template class CostCalculator<CostComplexAccuracy>;
 	template class CostCalculator<CostComplexRegression>;
+	template class CostCalculator<AverageDepthAccuracy>;
 	
 }

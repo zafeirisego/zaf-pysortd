@@ -20,7 +20,7 @@ namespace SORTD {
 			"Task to optimize.",
 			"accuracy",
 			"Main Parameters",
-			{ "cost-complex-accuracy", "cost-complex-regression" }
+			{ "cost-complex-accuracy", "cost-complex-regression", "average-depth-accuracy" }
 		);
 
 		parameters.DefineStringParameter

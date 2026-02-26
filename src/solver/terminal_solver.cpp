@@ -470,5 +470,6 @@ namespace SORTD {
 
 	template class TerminalSolver<CostComplexAccuracy>;
 	template class TerminalSolver<CostComplexRegression>;
+	template class TerminalSolver<AverageDepthAccuracy>;
 
 }

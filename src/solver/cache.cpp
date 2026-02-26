@@ -93,5 +93,6 @@ namespace SORTD {
 
 	template class Cache<CostComplexAccuracy>;
 	template class Cache<CostComplexRegression>;
+	template class Cache<AverageDepthAccuracy>;
 
 }

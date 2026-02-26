@@ -1620,5 +1620,6 @@ namespace SORTD {
 
 	template class Solver<CostComplexAccuracy>;
 	template class Solver<CostComplexRegression>;
+	template class Solver<AverageDepthAccuracy>;
 }
 

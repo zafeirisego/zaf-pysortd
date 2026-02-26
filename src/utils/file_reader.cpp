@@ -162,4 +162,5 @@ namespace SORTD {
 
 	template void FileReader::ReadData<CostComplexAccuracy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
 	template void FileReader::ReadData<CostComplexRegression>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
+	template void FileReader::ReadData<AverageDepthAccuracy>(ParameterHandler&, AData&, ADataView&, ADataView&, std::default_random_engine*);
 }

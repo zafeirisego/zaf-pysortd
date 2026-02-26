@@ -135,4 +135,5 @@ namespace SORTD {
 
 	template class SimilarityLowerBoundComputer<CostComplexAccuracy>;
 	template class SimilarityLowerBoundComputer<CostComplexRegression>;
+	template class SimilarityLowerBoundComputer<AverageDepthAccuracy>;
 }

@@ -576,4 +576,7 @@ namespace SORTD {
 
     template std::shared_ptr<AbstractTracker<CostComplexRegression>> AbstractTracker<CostComplexRegression>::CreateTracker(
         Solver<CostComplexRegression>*, Cache<CostComplexRegression>*, const ADataView&, const Solver<CostComplexRegression>::Context&, int, int, CostComplexRegression::SolType);
+    
+    template std::shared_ptr<AbstractTracker<AverageDepthAccuracy>> AbstractTracker<AverageDepthAccuracy>::CreateTracker(
+        Solver<AverageDepthAccuracy>*, Cache<AverageDepthAccuracy>*, const ADataView&, const Solver<AverageDepthAccuracy>::Context&, int, int, AverageDepthAccuracy::SolType);
 }

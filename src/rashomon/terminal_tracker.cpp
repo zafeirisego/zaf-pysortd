@@ -121,4 +121,6 @@ namespace SORTD {
     struct TerminalTracker<CostComplexAccuracy>;
     template
     struct TerminalTracker<CostComplexRegression>;
+    template
+    struct TerminalTracker<AverageDepthAccuracy>;
 }

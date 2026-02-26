@@ -296,12 +296,14 @@ namespace SORTD {
 
 	template struct RecursiveSolutionTracker<CostComplexAccuracy>;
 	template struct RecursiveSolutionTracker<CostComplexRegression>;
+	template struct RecusriveSolutionTracker<AverageDepthAccuracy>;
 
 #ifdef WITH_PYBIND
 
 	namespace py = pybind11;
 	template struct RecursiveSolutionTracker<CostComplexAccuracy, py::object>;
 	template struct RecursiveSolutionTracker<CostComplexRegression, py::object>;
+	template struct RecursiveSolutionTracker<AverageDepthAccuracy, py::object>;
 
 #endif
 
