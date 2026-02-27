@@ -569,6 +569,7 @@ namespace SORTD {
 
     template struct SplitTracker<CostComplexAccuracy>;
     template struct SplitTracker<CostComplexRegression>;
+    template struct SplitTracker<AverageDepthAccuracy>;
 
 
     template std::shared_ptr<AbstractTracker<CostComplexAccuracy>> AbstractTracker<CostComplexAccuracy>::CreateTracker(

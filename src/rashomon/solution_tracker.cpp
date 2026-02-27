@@ -296,7 +296,7 @@ namespace SORTD {
 
 	template struct RecursiveSolutionTracker<CostComplexAccuracy>;
 	template struct RecursiveSolutionTracker<CostComplexRegression>;
-	template struct RecusriveSolutionTracker<AverageDepthAccuracy>;
+	template struct RecursiveSolutionTracker<AverageDepthAccuracy>;
 
 #ifdef WITH_PYBIND
 

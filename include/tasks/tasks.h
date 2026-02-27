@@ -7,3 +7,4 @@ https://github.com/AlgTUDelft/pystreed
 #include "tasks/optimization_task.h"
 #include "tasks/accuracy/cost_complex_accuracy.h"
 #include "tasks/regression/cost_complex_regression.h"
+#include "tasks/average_depth_accuracy.h"
