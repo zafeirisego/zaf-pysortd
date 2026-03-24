@@ -21,7 +21,7 @@ import time
 class BaseSORTDSolver(BaseEstimator):
 
     _parameter_constraints: dict = {
-        "optimization_task": [StrOptions({"cost-complex-accuracy","cost-complex-regression"})],
+        "optimization_task": [StrOptions({"cost-complex-accuracy","cost-complex-regression","average-depth-accuracy"})],
         "max_depth": [Interval(numbers.Integral, 0, 20, closed="both")],
         "min_leaf_node_size": [Interval(numbers.Integral, 1, None, closed="left")],
         "time_limit": [Interval(numbers.Real, 0, None, closed="neither")],
@@ -127,7 +127,7 @@ class BaseSORTDSolver(BaseEstimator):
         self._params.min_leaf_node_size = self.min_leaf_node_size
         self._params.time_limit = self.time_limit
         self._params.cost_complexity = self.cost_complexity
-        if self.optimization_task in ["cost-complex-accuracy", "cost-complex-regression"]:
+        if self.optimization_task in ["cost-complex-accuracy", "cost-complex-regression", "average-depth-accuracy"]:
             self._params.cost_complexity = self.cost_complexity
         else:
             self._params.cost_complexity = 0.0

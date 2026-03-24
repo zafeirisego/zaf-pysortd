@@ -33,11 +33,13 @@ struct PyObjectEqual {
 enum task_type {
     cost_complex_accuracy,
     cost_complex_regression,
+    average_depth_accuracy,
 };
 
 task_type get_task_type_code(std::string& task) {
     if (task == "cost-complex-accuracy") return cost_complex_accuracy;
     else if (task == "cost-complex-regression") return cost_complex_regression;
+    else if (task=="average-depth-accuracy") return average_depth_accuracy;
     else {
         std::cout << "Encountered unknown optimization task: " << task << std::endl;
         exit(1);
@@ -612,6 +614,7 @@ PYBIND11_MODULE(csortd, m) {
 
     DefineSolver<CostComplexAccuracy>(m, "CostComplexAccuracy");
     DefineSolver<CostComplexRegression>(m, "CostComplexRegression");
+    DefineSolver<AverageDepthAccuracy>(m, "AverageDepthAccuracy");
 
     m.def("initialize_sortd_solver", [](ParameterHandler& parameters, std::default_random_engine& rng) {
         py::scoped_ostream_redirect stream(std::cout, py::module_::import("sys").attr("stdout"));
@@ -624,6 +627,7 @@ PYBIND11_MODULE(csortd, m) {
         switch(get_task_type_code(task)) {
             case cost_complex_accuracy: solver = new Solver<CostComplexAccuracy>(parameters, &rng); break;
             case cost_complex_regression: solver = new Solver<CostComplexRegression>(parameters, &rng); break;
+            case average_depth_accuracy: solver = new Solver<AverageDepthAccuracy>(parameters, &rng); break;
         }
         return solver;
     }, py::keep_alive<0, 1>());

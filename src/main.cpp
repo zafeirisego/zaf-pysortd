@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
 		solver =  new SORTD::Solver<SORTD::CostComplexRegression>(parameters, &rng);
 		SORTD::FileReader::ReadData<SORTD::CostComplexRegression>(parameters, data, train_data, test_data, &rng);
 	} else if (task == "average-depth-accuracy") {
-	        solver =  new SORTD::Solver<SORTD::AverageDepthAccuracy>(parameters, &rng);
+	    solver =  new SORTD::Solver<SORTD::AverageDepthAccuracy>(parameters, &rng);
 		SORTD::FileReader::ReadData<SORTD::AverageDepthAccuracy>(parameters, data, train_data, test_data, &rng);
 	} else {
 		std::cout << "Encountered unknown optimization task: " << task << std::endl;
@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 			if (!result->IsProvenOptimal()) {
 				std::cout << std::endl << "Warning: No proof of optimality. Results are best solution found before the time-out." << std::endl << std::endl;
 			}
-
+			std::cout << result->NumSolutions() << " solutions" << std::endl;
 			std::cout << "Solutions: " << result->NumSolutions() << " \tD\tN\t\tTrain \t\tTest\t\tAvg. Path length" << std::endl;
 			for (int i = 0; i < result->NumSolutions(); i++) {
 				auto train_score = result->optimal_scores[i];

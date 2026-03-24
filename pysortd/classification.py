@@ -65,7 +65,7 @@ class SORTDClassifier(BaseSORTDSolver):
             ignore_trivial_extensions: Enable/Disable removing depth-1 solutions with same left and right label assignment
             max_num_trees : Upper bound for the number of trees in the Rashomon set
         """
-        if not optimization_task in ["accuracy", "cost-complex-accuracy",]:
+        if not optimization_task in ["accuracy", "cost-complex-accuracy", "average-depth-accuracy"]:
             raise ValueError(f"Invalid value for optimization_task: {optimization_task}")
         BaseSORTDSolver.__init__(self, optimization_task, 
             max_depth=max_depth,

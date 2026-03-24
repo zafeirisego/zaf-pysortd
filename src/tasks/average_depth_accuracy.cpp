@@ -7,18 +7,51 @@ https://github.com/AlgTUDelft/pystreed
 
 namespace SORTD {
 
-        double AverageDepthAccuracy::GetLeafCosts(const ADataView& data, const BranchContext& context, int label) const { // Replace by custom function later
-                double error = 0;
-                for (int k = 0; k < data.NumLabels(); k++) {
-                        if (k == label) continue;
-                        error += data.NumInstancesForLabel(k);
-                }
-		int depth = context.GetBranch().Depth();
-		int portion data.Size();
-		double penalty = ((double) (depth * portion)) / ((double) (train_summary.size));
-		error += cost_complexity_parameter * penalty;
-                return error;
+	void AverageDepthAccuracy::PreprocessData(AData& data, bool train) {
+		std::vector<AInstance*>& instances = data.GetInstances();
+		int n = int(instances.size());
+
+		if (train) {
+			// Arbitrary ordering by features, so that instances with equivalent features are next to each other
+			// This sort only has to happen once. After a split there might be newly equivalent points, but since
+			// the feature that is split on will be removed from consideration, and positive and negative instances
+			// are mutually exclusive in the new DataViews, newly equivalent points will still be consecutive.
+			std::sort(instances.begin(), instances.end(), [](const AInstance* a, const AInstance* b) {
+				return a->GetFeatures() > b->GetFeatures();
+			});
+
+			int id = 0;
+			int unique_feature_vector_id = -1;
+			auto prev = instances[0];
+			for (auto i : instances) {
+				auto cca_i = static_cast<Instance<int, AVDAccExtraData>*>(i);
+				if (id == 0 || !prev->GetFeatures().HasEqualFeatures(i->GetFeatures())) {
+					unique_feature_vector_id++;
+					prev = i;
+				}
+				cca_i->GetMutableExtraData().unique_feature_vector_id = unique_feature_vector_id;
+				i->SetID(id++);
+			}
+		}
+	}
+
+	void AverageDepthAccuracy::PreprocessTrainData(ADataView& train_data) {
+		for (int k = 0; k < train_data.NumLabels(); k++) {
+			auto& instances = train_data.GetMutableInstancesForLabel(k);
+			std::sort(instances.begin(), instances.end(), [](const AInstance* a, const AInstance* b) {
+				return a->GetID() < b->GetID();
+			});
+		}
+	}
+
+    double AverageDepthAccuracy::GetLeafCosts(const ADataView& data, const BranchContext& context, int label) const { // Replace by custom function later
+        double error = 0;
+        for (int k = 0; k < data.NumLabels(); k++) {
+                if (k == label) continue;
+                error += data.NumInstancesForLabel(k);
         }
+        return error;
+    }
 
 	int AverageDepthAccuracy::GetTestLeafCosts(const ADataView& data, const BranchContext& context, int label) const {
 		int error = 0;
@@ -29,10 +62,10 @@ namespace SORTD {
 		return error;
 	}
 
-	Node<CostComplexAccuracy> CostComplexAccuracy::ComputeLowerBound(const ADataView& data, const Branch& branch, int max_depth, int num_nodes) {
+	Node<AverageDepthAccuracy> AverageDepthAccuracy::ComputeLowerBound(const ADataView& data, const Branch& branch, int max_depth, int num_nodes) {
 				// Equivalent Points Bound adapted from Angelino, E., Larus-Stone, N., Alabi, D., Seltzer, M., & Rudin, C. (2018). 
 				// 		// Learning certifiably optimal rule lists for categorical data. Journal of Machine Learning Research, 18(234), 1-78.
-				auto lb = Node<CostComplexAccuracy>(best);
+				auto lb = Node<AverageDepthAccuracy>(best);
 				auto& hashmap = lower_bound_cache[branch.Depth()];
 				auto it = hashmap.find(branch);
 				if (it != hashmap.end()) {
@@ -72,8 +105,8 @@ namespace SORTD {
 				// while the first iterator still has instances
 				while (labels.size() > 0 && iterators[labels[0]] != ends[labels[0]]) {
 				        current_label = labels[0];
-					if (static_cast<const Instance<int, CCAccExtraData>*>(prev)->GetExtraData().unique_feature_vector_id ==
-				            static_cast<const Instance<int, CCAccExtraData>*>(*iterators[current_label])->GetExtraData().unique_feature_vector_id) {
+					if (static_cast<const Instance<int, AVDAccExtraData>*>(prev)->GetExtraData().unique_feature_vector_id ==
+				            static_cast<const Instance<int, AVDAccExtraData>*>(*iterators[current_label])->GetExtraData().unique_feature_vector_id) {
 						class_counts[current_label]++;
 				         	n++;
 					} else {
